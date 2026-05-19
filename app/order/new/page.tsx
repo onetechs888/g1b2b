@@ -12,6 +12,7 @@ export default function NewOrderPage() {
   const [grade, setGrade] = useState("");
   const [description, setDescription] = useState("");
   const [fileName, setFileName] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async () => {
@@ -22,6 +23,29 @@ export default function NewOrderPage() {
 
     setLoading(true);
 
+    let fileUrl = "";
+
+    if (file) {
+      const filePath = `${Date.now()}-${file.name}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("order-files")
+        .upload(filePath, file);
+
+      if (uploadError) {
+        console.error(uploadError);
+        alert("파일 업로드 중 오류가 발생했습니다.");
+        setLoading(false);
+        return;
+      }
+
+      const { data } = supabase.storage
+        .from("order-files")
+        .getPublicUrl(filePath);
+
+      fileUrl = data.publicUrl;
+    }
+
     const { error } = await supabase.from("orders").insert([
       {
         title,
@@ -30,6 +54,7 @@ export default function NewOrderPage() {
         deadline,
         grade,
         file_name: fileName,
+        file_url: fileUrl,
       },
     ]);
 
@@ -138,12 +163,15 @@ export default function NewOrderPage() {
               <label className="block border-2 border-dashed border-gray-300 rounded-3xl p-10 text-center cursor-pointer hover:border-black transition bg-[#fafafa]">
                 <input
                   type="file"
-                  multiple
                   accept=".dwg,.dxf,.pdf,.step,.stp,.stl,.obj"
                   className="hidden"
                   onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) setFileName(file.name);
+                    const selectedFile = e.target.files?.[0];
+
+                    if (selectedFile) {
+                      setFile(selectedFile);
+                      setFileName(selectedFile.name);
+                    }
                   }}
                 />
 
