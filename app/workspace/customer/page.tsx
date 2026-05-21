@@ -1,143 +1,11 @@
 import Link from "next/link";
 
-function FolderIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5v-10Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function UsersIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.7" />
-      <path
-        d="M3.5 19c.7-3 2.8-5 5.5-5s4.8 2 5.5 5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-      <path
-        d="M15.5 11a2.7 2.7 0 1 0 0-5.4M17 14c1.8.6 3 2.2 3.5 5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function ClipboardIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <rect
-        x="5"
-        y="4"
-        width="14"
-        height="17"
-        rx="2"
-        stroke="currentColor"
-        strokeWidth="1.7"
-      />
-      <path
-        d="M9 4V2h6v2M9 12l2 2 4-5"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function BoxIcon() {
-  return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <path
-        d="M12 3 4.5 7.2 12 11.5l7.5-4.3L12 3Z"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M4.5 7.2v8.6L12 20l7.5-4.2V7.2M12 11.5V20"
-        stroke="currentColor"
-        strokeWidth="1.7"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function SidebarIcon({ type }: { type: "work" | "quality" | "partner" | "setting" }) {
-  if (type === "quality") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <path d="M12 3 5 6v5c0 4.5 2.8 8.3 7 10 4.2-1.7 7-5.5 7-10V6l-7-3Z" stroke="currentColor" strokeWidth="1.8" />
-        <path d="m9 12 2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    );
-  }
-
-  if (type === "partner") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <circle cx="9" cy="8" r="3" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="17" cy="10" r="2.5" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M3.5 19c.7-3 2.8-5 5.5-5 2 0 3.7.9 4.7 2.4M14.5 15c2.2.2 4 1.7 4.8 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      </svg>
-    );
-  }
-
-  if (type === "setting") {
-    return (
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-        <path d="M12 15.5A3.5 3.5 0 1 0 12 8a3.5 3.5 0 0 0 0 7.5Z" stroke="currentColor" strokeWidth="1.8" />
-        <path d="M19 13.5v-3l-2-.5-.8-1.9 1-1.8-2.1-2.1-1.8 1-1.9-.8L10 1.5H7l-.5 2-1.9.8-1.8-1L.7 5.4l1 1.8-.8 1.9-2 .5v3l2 .5.8 1.9-1 1.8 2.1 2.1 1.8-1 1.9.8.5 2h3l.5-2 1.9-.8 1.8 1 2.1-2.1-1-1.8.8-1.9 2-.6Z" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" transform="translate(2 1)" />
-      </svg>
-    );
-  }
-
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-      <rect x="4" y="5" width="16" height="14" rx="2" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M8 9h8M8 13h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 export default function CustomerWorkspacePage() {
   const summaryCards = [
-    {
-      title: "진행중 프로젝트",
-      value: "12",
-      desc: "운영중",
-      icon: <FolderIcon />,
-    },
-    {
-      title: "참여 신청 업체",
-      value: "28",
-      desc: "검토 필요",
-      icon: <UsersIcon />,
-    },
-    {
-      title: "품질 검수 요청",
-      value: "7",
-      desc: "G1 진행",
-      icon: <ClipboardIcon />,
-    },
-    {
-      title: "납품 확인 대기",
-      value: "5",
-      desc: "확인 필요",
-      icon: <BoxIcon />,
-    },
+    ["진행중 프로젝트", "12", "운영중"],
+    ["참여 신청 업체", "28", "검토 필요"],
+    ["품질 검수 요청", "7", "G1 진행"],
+    ["납품 확인 대기", "5", "확인 필요"],
   ];
 
   const projects = [
@@ -215,21 +83,20 @@ export default function CustomerWorkspacePage() {
 
             <nav className="space-y-2 text-sm">
               {[
-                ["업무관리", "/workspace", "work"],
-                ["고객 업무관리", "/workspace/customer", "work"],
-                ["품질관리", "/workspace/quality", "quality"],
-                ["설정", "/workspace/settings", "setting"],
-              ].map(([label, href, type]) => (
+                ["업무관리", "/workspace"],
+                ["고객 업무관리", "/workspace/customer"],
+                ["품질관리", "/workspace/quality"],
+                ["설정", "/workspace/settings"],
+              ].map(([label, href]) => (
                 <Link
                   key={label}
                   href={href}
-                  className={`flex items-center gap-3 rounded-2xl px-4 py-3 font-semibold transition ${
+                  className={`block rounded-2xl px-4 py-3 font-semibold transition ${
                     label === "고객 업무관리"
                       ? "bg-black text-white"
                       : "text-gray-700 hover:bg-gray-100 hover:text-black"
                   }`}
                 >
-                  <SidebarIcon type={type as "work" | "quality" | "partner" | "setting"} />
                   {label}
                 </Link>
               ))}
@@ -261,22 +128,14 @@ export default function CustomerWorkspacePage() {
           </header>
 
           <section className="mb-7 grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-            {summaryCards.map((card) => (
+            {summaryCards.map(([label, value, desc]) => (
               <article
-                key={card.title}
+                key={label}
                 className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm"
               >
-                <div className="flex items-start gap-5">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-[#fafafa]">
-                    {card.icon}
-                  </div>
-
-                  <div>
-                    <p className="text-sm font-bold">{card.title}</p>
-                    <h3 className="mt-2 text-3xl font-extrabold">{card.value}</h3>
-                    <p className="mt-2 text-sm text-gray-500">{card.desc}</p>
-                  </div>
-                </div>
+                <p className="text-sm font-bold">{label}</p>
+                <h3 className="mt-2 text-3xl font-extrabold">{value}</h3>
+                <p className="mt-2 text-sm text-gray-500">{desc}</p>
               </article>
             ))}
           </section>
@@ -326,7 +185,7 @@ export default function CustomerWorkspacePage() {
                       <td className="px-6 py-5">{project.due}</td>
                       <td className="px-6 py-5">
                         <Link
-                          href={`/workspace/projects/${project.id}`}
+                          href={`/workspace/customer/projects/${project.id}`}
                           className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold hover:border-black transition"
                         >
                           상세보기
@@ -363,16 +222,8 @@ export default function CustomerWorkspacePage() {
                       <tr key={`${item.company}-${item.project}`}>
                         <td className="px-6 py-4 font-semibold">{item.company}</td>
                         <td className="px-6 py-4">{item.project}</td>
-                        <td className="px-6 py-4">
-                          <span className={`rounded-md px-3 py-1 text-xs font-semibold ${item.grade === "A" ? "bg-black text-white" : "border border-gray-300"}`}>
-                            {item.grade}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <span className={`rounded-md px-3 py-1 text-xs font-semibold ${item.status === "승인" ? "bg-black text-white" : item.status === "거절" ? "bg-gray-200 text-gray-500" : "border border-gray-300"}`}>
-                            {item.status}
-                          </span>
-                        </td>
+                        <td className="px-6 py-4">{item.grade}</td>
+                        <td className="px-6 py-4">{item.status}</td>
                         <td className="px-6 py-4">{item.date}</td>
                       </tr>
                     ))}
