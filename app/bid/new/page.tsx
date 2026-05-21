@@ -1,141 +1,396 @@
-export default function NewBidPage() {
+"use client";
+
+import Link from "next/link";
+import { useRef, useState } from "react";
+
+type BomItem = {
+  no: number;
+  name: string;
+  drawingNo: string;
+  qty: number;
+  material: string;
+  postProcess: string;
+  dueDate: string;
+  pdf: boolean;
+  dwg: boolean;
+  step: boolean;
+  note: string;
+};
+
+const initialBomItems: BomItem[] = [
+  { no: 1, name: "Chamber 본체", drawingNo: "DRW-001", qty: 2, material: "AL6061", postProcess: "아노다이징", dueDate: "2026-06-20", pdf: true, dwg: true, step: true, note: "-" },
+  { no: 2, name: "Cover", drawingNo: "DRW-002", qty: 1, material: "SUS304", postProcess: "없음", dueDate: "2026-06-22", pdf: true, dwg: true, step: true, note: "-" },
+  { no: 3, name: "Bracket", drawingNo: "DRW-003", qty: 4, material: "AL6061", postProcess: "아노다이징", dueDate: "2026-06-18", pdf: true, dwg: true, step: true, note: "-" },
+  { no: 4, name: "Shaft", drawingNo: "DRW-004", qty: 2, material: "S45C", postProcess: "흑착색", dueDate: "2026-06-25", pdf: true, dwg: true, step: true, note: "-" },
+  { no: 5, name: "Bolt", drawingNo: "DRW-005", qty: 8, material: "SS400", postProcess: "아연도금", dueDate: "2026-06-30", pdf: true, dwg: true, step: true, note: "-" },
+];
+
+function SidebarIcon() {
+  return (
+    <span className="flex h-4 w-4 items-center justify-center rounded border border-current text-[9px]">
+      ·
+    </span>
+  );
+}
+
+function FileIcon({ type }: { type: "pdf" | "dwg" | "step" }) {
+  const color =
+    type === "pdf" ? "text-red-500" : type === "dwg" ? "text-green-600" : "text-blue-500";
+
+  return (
+    <button
+      type="button"
+      onClick={() => alert(`${type.toUpperCase()} 파일 미리보기 기능은 추후 연결 예정입니다.`)}
+      className={`inline-flex items-center justify-center text-lg font-bold ${color}`}
+    >
+      {type === "step" ? "◇" : "▧"}
+    </button>
+  );
+}
+
+function CheckBox({ checked, onClick }: { checked: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-5 w-5 items-center justify-center rounded border text-[11px] font-bold ${
+        checked ? "border-black bg-black text-white" : "border-gray-300 bg-white text-white"
+      }`}
+    >
+      ✓
+    </button>
+  );
+}
+
+export default function BidNewPage() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [bomItems, setBomItems] = useState<BomItem[]>(initialBomItems);
+  const [editingNo, setEditingNo] = useState<number | null>(null);
+  const [requirementMemo, setRequirementMemo] = useState("");
+  const [message, setMessage] = useState("");
+
+  const [settings, setSettings] = useState({
+    partialShipment: true,
+    urgentProduction: false,
+    priorityInspection: false,
+    nda: true,
+    g1Measure: false,
+    g1QualityReview: false,
+    firstArticleInspection: false,
+  });
+
+  const updateBomItem = (no: number, key: keyof BomItem, value: string | number | boolean) => {
+    setBomItems((prev) =>
+      prev.map((item) => (item.no === no ? { ...item, [key]: value } : item)),
+    );
+  };
+
+  const handleAddItem = () => {
+    const nextNo = bomItems.length + 1;
+
+    setBomItems([
+      ...bomItems,
+      {
+        no: nextNo,
+        name: `신규 품목 ${nextNo}`,
+        drawingNo: `DRW-${String(nextNo).padStart(3, "0")}`,
+        qty: 1,
+        material: "AL6061",
+        postProcess: "없음",
+        dueDate: "2026-06-30",
+        pdf: false,
+        dwg: false,
+        step: false,
+        note: "-",
+      },
+    ]);
+  };
+
+  const handleDeleteItem = (no: number) => {
+    setBomItems((prev) =>
+      prev
+        .filter((item) => item.no !== no)
+        .map((item, index) => ({ ...item, no: index + 1 })),
+    );
+  };
+
   return (
     <main className="min-h-screen bg-[#f6f6f4] text-black">
-      <section className="max-w-7xl mx-auto px-8 py-12">
-        {/* 상단 */}
-        <div className="mb-10">
-          <p className="text-sm font-semibold text-gray-500 mb-3">
-            New Manufacturing Bid
-          </p>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".xlsx,.xls,.csv"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) alert(`${file.name} 파일이 선택되었습니다.`);
+        }}
+      />
 
-          <h1 className="text-4xl font-extrabold mb-4">입찰 등록</h1>
+      <div className="grid min-h-screen grid-cols-[240px_1fr]">
+        <aside className="border-r border-gray-200 bg-white px-4 py-8">
+          <div className="mb-12 px-2">
+            <h2 className="text-4xl font-extrabold tracking-tight">G1B2B</h2>
+            <p className="mt-2 text-sm text-gray-500">Customer Workspace</p>
+          </div>
 
-          <p className="text-sm text-gray-600">
-            도면과 요구사항을 등록하고, 검증된 파트너들의 견적을 비교할 수
-            있습니다.
-          </p>
-        </div>
+          <nav className="space-y-2 text-sm font-bold">
+            <Link href="/workspace" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
+              <SidebarIcon />
+              업무관리
+            </Link>
 
-        <section className="grid lg:grid-cols-[1.2fr_0.8fr] gap-6">
-          {/* 왼쪽 입력 영역 */}
-          <div className="bg-white border border-gray-200 rounded-3xl p-8 shadow-sm">
-            <h2 className="text-xl font-bold mb-6">프로젝트 정보</h2>
+            <Link href="/workspace/customer" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
+              <SidebarIcon />
+              고객 업무관리
+            </Link>
 
-            <div className="grid md:grid-cols-2 gap-4">
-              <input
-                type="text"
-                placeholder="프로젝트명"
-                className="bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition"
-              />
+            <Link href="/bid/new" className="flex items-center gap-3 rounded-2xl bg-black px-4 py-3 text-white">
+              <SidebarIcon />
+              입찰 등록
+            </Link>
 
-              <select className="bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition">
-                <option>가공 방식 선택</option>
-                <option>MCT · CNC 가공</option>
-                <option>판금 · 레이저</option>
-                <option>사출성형</option>
-                <option>용접 · 제관</option>
-                <option>연삭 가공</option>
-                <option>후가공</option>
-              </select>
+            <Link href="/workspace/quality" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
+              <SidebarIcon />
+              품질관리
+            </Link>
 
-              <input
-                type="text"
-                placeholder="예상 수량 예: 500EA"
-                className="bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition"
-              />
+            <Link href="/settings" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
+              <SidebarIcon />
+              설정
+            </Link>
+          </nav>
 
-              <input
-                type="text"
-                placeholder="입찰 마감일 예: 2026-06-30"
-                className="bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition"
-              />
+          <div className="mt-96 rounded-2xl border border-gray-200 bg-white p-4">
+            <p className="text-sm font-extrabold">고객 PM Center</p>
+            <p className="mt-2 text-xs text-gray-500">pm@mirae.co.kr</p>
+            <p className="text-xs text-gray-500">010-1234-5678</p>
+          </div>
+        </aside>
 
-              <select className="bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition">
-                <option>참여 가능 등급 선택</option>
-                <option>D 등급 이상</option>
-                <option>C 등급 이상</option>
-                <option>B 등급 이상</option>
-                <option>A 등급 이상</option>
-              </select>
+        <section className="px-8 py-7">
+          <div className="mb-6 flex items-start justify-between">
+            <div>
+              <h1 className="text-2xl font-extrabold">
+                입찰 등록 <span className="text-lg">(프로젝트 기반)</span>
+              </h1>
+              <p className="mt-3 text-sm text-gray-600">
+                프로젝트 정보를 입력하고 BOM 품목과 요구사항을 등록하여 입찰을 요청합니다.
+              </p>
+            </div>
 
-              <select className="bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition">
-                <option>입찰 방식 선택</option>
-                <option>온라인 입찰</option>
-                <option>오프라인 입찰</option>
-                <option>보안 입찰</option>
-              </select>
-
-              <textarea
-                placeholder="요구사항 및 특이사항을 입력하세요"
-                rows={7}
-                className="md:col-span-2 bg-[#f8f8f7] border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition resize-none"
-              />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => alert("임시 저장되었습니다.")}
+                className="h-11 rounded-xl border border-gray-300 bg-white px-7 text-sm font-bold"
+              >
+                임시 저장
+              </button>
+              <button
+                type="button"
+                onClick={() => alert("입찰 요청이 등록되었습니다.")}
+                className="h-11 rounded-xl bg-black px-8 text-sm font-bold text-white"
+              >
+                입찰 요청 등록
+              </button>
             </div>
           </div>
 
-          {/* 오른쪽 업로드 영역 */}
-          <div className="space-y-6">
-            <div className="bg-white border border-gray-200 rounded-3xl p-8 shadow-sm">
-              <h2 className="text-xl font-bold mb-3">도면 / 3D 파일 업로드</h2>
+          <section className="mb-4 rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="border-b border-gray-200 px-6 py-4">
+              <h2 className="text-lg font-extrabold">프로젝트 정보</h2>
+            </div>
 
-              <p className="text-xs text-gray-500 mb-6">
-                DWG, DXF, PDF, STEP, STL, OBJ 파일을 첨부할 수 있습니다.
-              </p>
+            <div className="grid grid-cols-5 gap-5 p-6">
+              {[
+                ["PO No.", "PO-2026-0031"],
+                ["발주번호", "ORD-2026-0021"],
+                ["프로젝트명", "Chamber Module 제작"],
+                ["담당 PM", "김지민 PM"],
+                ["연락처", "010-1234-5678"],
+                ["이메일", "kim.pm@mirae.co.kr"],
+              ].map(([label, value]) => (
+                <label key={label} className="space-y-2">
+                  <span className="text-xs font-bold text-gray-600">{label}</span>
+                  <input className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold" defaultValue={value} />
+                </label>
+              ))}
 
-              <label className="block border-2 border-dashed border-gray-300 rounded-3xl p-10 text-center cursor-pointer hover:border-black transition bg-[#fafafa]">
-                <input
-                  type="file"
-                  multiple
-                  accept=".dwg,.dxf,.pdf,.step,.stp,.stl,.obj"
-                  className="hidden"
-                />
-
-                <div className="text-4xl mb-4">📐</div>
-
-                <div className="text-sm font-bold mb-2">
-                  도면 파일을 선택하거나 업로드하세요
-                </div>
-
-                <div className="text-xs text-gray-500">
-                  입찰 검토에 필요한 도면 및 3D 모델 첨부
-                </div>
+              <label className="space-y-2">
+                <span className="text-xs font-bold text-gray-600">고객사</span>
+                <select className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold">
+                  <option>미래정밀(주)</option>
+                  <option>에이원테크</option>
+                  <option>지원테크</option>
+                </select>
               </label>
 
-              <div className="mt-6 border border-gray-200 rounded-2xl p-4 bg-[#f8f8f7]">
-                <h3 className="text-sm font-bold mb-3">도면 미리보기</h3>
+              <label className="space-y-2">
+                <span className="text-xs font-bold text-gray-600">납기일</span>
+                <input type="date" className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold" defaultValue="2026-06-30" />
+              </label>
 
-                <div className="h-40 flex items-center justify-center border border-gray-200 rounded-2xl text-gray-400 text-xs bg-white">
-                  PDF / 3D 파일 미리보기 연결 예정
-                </div>
+              <label className="space-y-2">
+                <span className="text-xs font-bold text-gray-600">통화</span>
+                <select className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold">
+                  <option>KRW</option>
+                  <option>USD</option>
+                  <option>JPY</option>
+                </select>
+              </label>
+
+              <label className="col-span-2 space-y-2">
+                <span className="text-xs font-bold text-gray-600">프로젝트 설명 (선택)</span>
+                <input className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm" placeholder="프로젝트에 대한 간단한 설명을 입력하세요." />
+              </label>
+            </div>
+          </section>
+
+          <section className="mb-4 rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
+              <div>
+                <h2 className="text-lg font-extrabold">BOM 품목 리스트</h2>
+                <p className="mt-2 text-xs text-gray-500">프로젝트에 포함된 모든 품목을 등록하세요.</p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="h-10 rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold"
+                >
+                  엑셀 업로드
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAddItem}
+                  className="h-10 rounded-xl bg-black px-5 text-sm font-bold text-white"
+                >
+                  + 품목 추가
+                </button>
               </div>
             </div>
 
-            <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-sm font-bold mb-3">입찰 등록 안내</h3>
+            <div className="overflow-auto">
+              <table className="w-full min-w-[1240px] text-sm">
+                <thead className="bg-[#fafafa] text-xs text-gray-500">
+                  <tr>
+                    <th className="px-5 py-4 text-left">No.</th>
+                    <th className="px-5 py-4 text-left">품목명</th>
+                    <th className="px-5 py-4 text-left">도면번호</th>
+                    <th className="px-5 py-4 text-left">수량</th>
+                    <th className="px-5 py-4 text-left">재질</th>
+                    <th className="px-5 py-4 text-left">후처리</th>
+                    <th className="px-5 py-4 text-left">납기</th>
+                    <th className="px-5 py-4 text-left">도면(PDF)</th>
+                    <th className="px-5 py-4 text-left">도면(DWG)</th>
+                    <th className="px-5 py-4 text-left">3D(STEP)</th>
+                    <th className="px-5 py-4 text-left">비고</th>
+                    <th className="px-5 py-4 text-left">관리</th>
+                  </tr>
+                </thead>
 
-              <ul className="space-y-2 text-xs text-gray-500 leading-relaxed">
-                <li>• 등록된 도면과 요구사항을 기준으로 파트너가 견적을 제출합니다.</li>
-                <li>• 대외비 품목은 보안 입찰 또는 오프라인 입찰로 운영할 수 있습니다.</li>
-                <li>• 입찰 마감 후 견적 비교 및 파트너 선정이 가능합니다.</li>
-              </ul>
+                <tbody className="divide-y divide-gray-200">
+                  {bomItems.map((item) => (
+                    <tr key={item.no} className="hover:bg-[#fafafa]">
+                      <td className="px-5 py-4 font-bold">{item.no}</td>
+                      <td className="px-5 py-4 font-extrabold">
+                        {editingNo === item.no ? (
+                          <input value={item.name} onChange={(e) => updateBomItem(item.no, "name", e.target.value)} className="h-9 rounded border px-2" />
+                        ) : (
+                          item.name
+                        )}
+                      </td>
+                      <td className="px-5 py-4 font-bold">{item.drawingNo}</td>
+                      <td className="px-5 py-4 font-bold">{item.qty}</td>
+                      <td className="px-5 py-4 font-bold">{item.material}</td>
+                      <td className="px-5 py-4">{item.postProcess}</td>
+                      <td className="px-5 py-4 font-bold">{item.dueDate}</td>
+                      <td className="px-5 py-4"><FileIcon type="pdf" /></td>
+                      <td className="px-5 py-4"><FileIcon type="dwg" /></td>
+                      <td className="px-5 py-4"><FileIcon type="step" /></td>
+                      <td className="px-5 py-4">{item.note}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex gap-2 text-xs font-bold">
+                          <button type="button" onClick={() => setEditingNo(editingNo === item.no ? null : item.no)} className="rounded border px-2 py-1">
+                            {editingNo === item.no ? "완료" : "수정"}
+                          </button>
+                          <button type="button" onClick={() => handleDeleteItem(item.no)} className="rounded border px-2 py-1">
+                            삭제
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          </section>
+
+          <section className="grid grid-cols-2 gap-4">
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-extrabold">제조 요구사항</h2>
+              </div>
+
+              <div className="grid grid-cols-3 gap-5 p-6">
+                {["재질 / 규격", "공차", "표면처리", "후처리", "검사 조건", "포장 조건"].map((label) => (
+                  <label key={label} className="space-y-2">
+                    <span className="text-xs font-bold text-gray-600">{label}</span>
+                    <select className="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm">
+                      <option>도면 기준</option>
+                    </select>
+                  </label>
+                ))}
+
+                <label className="col-span-3 space-y-2">
+                  <span className="text-xs font-bold text-gray-600">특이사항 / 추가 요구사항</span>
+                  <textarea value={requirementMemo} onChange={(e) => setRequirementMemo(e.target.value.slice(0, 1000))} className="h-20 w-full resize-none rounded-lg border border-gray-300 p-4 text-sm" />
+                  <p className="text-right text-xs text-gray-500">{requirementMemo.length} / 1000</p>
+                </label>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="border-b border-gray-200 px-6 py-4">
+                <h2 className="text-lg font-extrabold">기타 설정</h2>
+              </div>
+
+              <div className="grid grid-cols-3 gap-x-8 gap-y-5 p-6">
+                {[
+                  ["partialShipment", "부분 출하 허용"],
+                  ["urgentProduction", "긴급 생산 요청"],
+                  ["priorityInspection", "우선 검수 요청"],
+                  ["nda", "NDA 필요"],
+                  ["g1Measure", "G1 3차원 측정 요청"],
+                  ["g1QualityReview", "G1 품질 검토 지원"],
+                  ["firstArticleInspection", "초도품 검사 요청"],
+                ].map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-3 text-sm font-bold">
+                    <CheckBox
+                      checked={settings[key as keyof typeof settings]}
+                      onClick={() =>
+                        setSettings((prev) => ({
+                          ...prev,
+                          [key]: !prev[key as keyof typeof settings],
+                        }))
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+
+                <label className="col-span-3 space-y-2">
+                  <span className="text-xs font-bold text-gray-600">기타 전달사항</span>
+                  <textarea value={message} onChange={(e) => setMessage(e.target.value.slice(0, 500))} className="h-20 w-full resize-none rounded-lg border border-gray-300 p-4 text-sm" />
+                  <p className="text-right text-xs text-gray-500">{message.length} / 500</p>
+                </label>
+              </div>
+            </div>
+          </section>
         </section>
-
-        {/* 하단 버튼 */}
-        <div className="mt-8 flex justify-between">
-          <a
-            href="/bid"
-            className="border border-gray-300 bg-white px-5 py-3 rounded-xl text-sm font-semibold hover:border-black transition"
-          >
-            입찰 목록으로
-          </a>
-
-          <button className="bg-black text-white px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition">
-            입찰 등록하기
-          </button>
-        </div>
-      </section>
+      </div>
     </main>
   );
 }
