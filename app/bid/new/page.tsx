@@ -18,24 +18,80 @@ type BomItem = {
 };
 
 const initialBomItems: BomItem[] = [
-  { no: 1, name: "Chamber 본체", drawingNo: "DRW-001", qty: 2, material: "AL6061", postProcess: "아노다이징", dueDate: "2026-06-20", pdf: true, dwg: true, step: true, note: "-" },
-  { no: 2, name: "Cover", drawingNo: "DRW-002", qty: 1, material: "SUS304", postProcess: "없음", dueDate: "2026-06-22", pdf: true, dwg: true, step: true, note: "-" },
-  { no: 3, name: "Bracket", drawingNo: "DRW-003", qty: 4, material: "AL6061", postProcess: "아노다이징", dueDate: "2026-06-18", pdf: true, dwg: true, step: true, note: "-" },
-  { no: 4, name: "Shaft", drawingNo: "DRW-004", qty: 2, material: "S45C", postProcess: "흑착색", dueDate: "2026-06-25", pdf: true, dwg: true, step: true, note: "-" },
-  { no: 5, name: "Bolt", drawingNo: "DRW-005", qty: 8, material: "SS400", postProcess: "아연도금", dueDate: "2026-06-30", pdf: true, dwg: true, step: true, note: "-" },
+  {
+    no: 1,
+    name: "Chamber 본체",
+    drawingNo: "DRW-001",
+    qty: 2,
+    material: "AL6061",
+    postProcess: "아노다이징",
+    dueDate: "2026-06-20",
+    pdf: true,
+    dwg: true,
+    step: true,
+    note: "-",
+  },
+  {
+    no: 2,
+    name: "Cover",
+    drawingNo: "DRW-002",
+    qty: 1,
+    material: "SUS304",
+    postProcess: "없음",
+    dueDate: "2026-06-22",
+    pdf: true,
+    dwg: true,
+    step: true,
+    note: "-",
+  },
+  {
+    no: 3,
+    name: "Bracket",
+    drawingNo: "DRW-003",
+    qty: 4,
+    material: "AL6061",
+    postProcess: "아노다이징",
+    dueDate: "2026-06-18",
+    pdf: true,
+    dwg: true,
+    step: true,
+    note: "-",
+  },
+  {
+    no: 4,
+    name: "Shaft",
+    drawingNo: "DRW-004",
+    qty: 2,
+    material: "S45C",
+    postProcess: "흑착색",
+    dueDate: "2026-06-25",
+    pdf: true,
+    dwg: true,
+    step: true,
+    note: "-",
+  },
+  {
+    no: 5,
+    name: "Bolt",
+    drawingNo: "DRW-005",
+    qty: 8,
+    material: "SS400",
+    postProcess: "아연도금",
+    dueDate: "2026-06-30",
+    pdf: true,
+    dwg: true,
+    step: true,
+    note: "-",
+  },
 ];
-
-function SidebarIcon() {
-  return (
-    <span className="flex h-4 w-4 items-center justify-center rounded border border-current text-[9px]">
-      ·
-    </span>
-  );
-}
 
 function FileIcon({ type }: { type: "pdf" | "dwg" | "step" }) {
   const color =
-    type === "pdf" ? "text-red-500" : type === "dwg" ? "text-green-600" : "text-blue-500";
+    type === "pdf"
+      ? "text-red-500"
+      : type === "dwg"
+        ? "text-green-600"
+        : "text-blue-500";
 
   return (
     <button
@@ -48,7 +104,13 @@ function FileIcon({ type }: { type: "pdf" | "dwg" | "step" }) {
   );
 }
 
-function CheckBox({ checked, onClick }: { checked: boolean; onClick: () => void }) {
+function CheckBox({
+  checked,
+  onClick,
+}: {
+  checked: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
@@ -64,6 +126,7 @@ function CheckBox({ checked, onClick }: { checked: boolean; onClick: () => void 
 
 export default function BidNewPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [bomItems, setBomItems] = useState<BomItem[]>(initialBomItems);
   const [editingNo, setEditingNo] = useState<number | null>(null);
   const [requirementMemo, setRequirementMemo] = useState("");
@@ -79,7 +142,11 @@ export default function BidNewPage() {
     firstArticleInspection: false,
   });
 
-  const updateBomItem = (no: number, key: keyof BomItem, value: string | number | boolean) => {
+  const updateBomItem = (
+    no: number,
+    key: keyof BomItem,
+    value: string | number | boolean,
+  ) => {
     setBomItems((prev) =>
       prev.map((item) => (item.no === no ? { ...item, [key]: value } : item)),
     );
@@ -110,7 +177,10 @@ export default function BidNewPage() {
     setBomItems((prev) =>
       prev
         .filter((item) => item.no !== no)
-        .map((item, index) => ({ ...item, no: index + 1 })),
+        .map((item, index) => ({
+          ...item,
+          no: index + 1,
+        })),
     );
   };
 
@@ -135,28 +205,45 @@ export default function BidNewPage() {
           </div>
 
           <nav className="space-y-2 text-sm font-bold">
-            <Link href="/workspace" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
-              <SidebarIcon />
+            <Link
+              href="/workspace"
+              className="block rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100"
+            >
               업무관리
             </Link>
 
-            <Link href="/workspace/customer" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
-              <SidebarIcon />
+            <Link
+              href="/workspace/customer"
+              className="block rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100"
+            >
               고객 업무관리
             </Link>
 
-            <Link href="/bid/new" className="flex items-center gap-3 rounded-2xl bg-black px-4 py-3 text-white">
-              <SidebarIcon />
+            <Link
+              href="/order/new"
+              className="block rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100"
+            >
+              발주 등록
+            </Link>
+
+            <Link
+              href="/bid/new"
+              className="block rounded-2xl bg-black px-4 py-3 text-white"
+            >
               입찰 등록
             </Link>
 
-            <Link href="/workspace/quality" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
-              <SidebarIcon />
+            <Link
+              href="/workspace/quality"
+              className="block rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100"
+            >
               품질관리
             </Link>
 
-            <Link href="/settings" className="flex items-center gap-3 rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100">
-              <SidebarIcon />
+            <Link
+              href="/settings"
+              className="block rounded-2xl px-4 py-3 text-gray-700 hover:bg-gray-100"
+            >
               설정
             </Link>
           </nav>
@@ -187,6 +274,7 @@ export default function BidNewPage() {
               >
                 임시 저장
               </button>
+
               <button
                 type="button"
                 onClick={() => alert("입찰 요청이 등록되었습니다.")}
@@ -213,7 +301,10 @@ export default function BidNewPage() {
               ].map(([label, value]) => (
                 <label key={label} className="space-y-2">
                   <span className="text-xs font-bold text-gray-600">{label}</span>
-                  <input className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold" defaultValue={value} />
+                  <input
+                    className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold"
+                    defaultValue={value}
+                  />
                 </label>
               ))}
 
@@ -228,7 +319,11 @@ export default function BidNewPage() {
 
               <label className="space-y-2">
                 <span className="text-xs font-bold text-gray-600">납기일</span>
-                <input type="date" className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold" defaultValue="2026-06-30" />
+                <input
+                  type="date"
+                  className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm font-bold"
+                  defaultValue="2026-06-30"
+                />
               </label>
 
               <label className="space-y-2">
@@ -242,7 +337,10 @@ export default function BidNewPage() {
 
               <label className="col-span-2 space-y-2">
                 <span className="text-xs font-bold text-gray-600">프로젝트 설명 (선택)</span>
-                <input className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm" placeholder="프로젝트에 대한 간단한 설명을 입력하세요." />
+                <input
+                  className="h-11 w-full rounded-lg border border-gray-300 px-4 text-sm"
+                  placeholder="프로젝트에 대한 간단한 설명을 입력하세요."
+                />
               </label>
             </div>
           </section>
@@ -251,7 +349,9 @@ export default function BidNewPage() {
             <div className="flex items-center justify-between border-b border-gray-200 px-6 py-4">
               <div>
                 <h2 className="text-lg font-extrabold">BOM 품목 리스트</h2>
-                <p className="mt-2 text-xs text-gray-500">프로젝트에 포함된 모든 품목을 등록하세요.</p>
+                <p className="mt-2 text-xs text-gray-500">
+                  프로젝트에 포함된 모든 품목을 등록하세요.
+                </p>
               </div>
 
               <div className="flex gap-3">
@@ -262,6 +362,7 @@ export default function BidNewPage() {
                 >
                   엑셀 업로드
                 </button>
+
                 <button
                   type="button"
                   onClick={handleAddItem}
@@ -295,28 +396,118 @@ export default function BidNewPage() {
                   {bomItems.map((item) => (
                     <tr key={item.no} className="hover:bg-[#fafafa]">
                       <td className="px-5 py-4 font-bold">{item.no}</td>
+
                       <td className="px-5 py-4 font-extrabold">
                         {editingNo === item.no ? (
-                          <input value={item.name} onChange={(e) => updateBomItem(item.no, "name", e.target.value)} className="h-9 rounded border px-2" />
+                          <input
+                            value={item.name}
+                            onChange={(e) => updateBomItem(item.no, "name", e.target.value)}
+                            className="h-9 rounded border px-2"
+                          />
                         ) : (
                           item.name
                         )}
                       </td>
-                      <td className="px-5 py-4 font-bold">{item.drawingNo}</td>
-                      <td className="px-5 py-4 font-bold">{item.qty}</td>
-                      <td className="px-5 py-4 font-bold">{item.material}</td>
-                      <td className="px-5 py-4">{item.postProcess}</td>
-                      <td className="px-5 py-4 font-bold">{item.dueDate}</td>
-                      <td className="px-5 py-4"><FileIcon type="pdf" /></td>
-                      <td className="px-5 py-4"><FileIcon type="dwg" /></td>
-                      <td className="px-5 py-4"><FileIcon type="step" /></td>
+
+                      <td className="px-5 py-4 font-bold">
+                        {editingNo === item.no ? (
+                          <input
+                            value={item.drawingNo}
+                            onChange={(e) =>
+                              updateBomItem(item.no, "drawingNo", e.target.value)
+                            }
+                            className="h-9 rounded border px-2"
+                          />
+                        ) : (
+                          item.drawingNo
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4 font-bold">
+                        {editingNo === item.no ? (
+                          <input
+                            type="number"
+                            value={item.qty}
+                            onChange={(e) => updateBomItem(item.no, "qty", Number(e.target.value))}
+                            className="h-9 w-16 rounded border px-2"
+                          />
+                        ) : (
+                          item.qty
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4 font-bold">
+                        {editingNo === item.no ? (
+                          <input
+                            value={item.material}
+                            onChange={(e) => updateBomItem(item.no, "material", e.target.value)}
+                            className="h-9 rounded border px-2"
+                          />
+                        ) : (
+                          item.material
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        {editingNo === item.no ? (
+                          <select
+                            value={item.postProcess}
+                            onChange={(e) =>
+                              updateBomItem(item.no, "postProcess", e.target.value)
+                            }
+                            className="h-9 rounded border px-2"
+                          >
+                            <option>없음</option>
+                            <option>아노다이징</option>
+                            <option>아연도금</option>
+                            <option>흑착색</option>
+                            <option>연마</option>
+                            <option>열처리</option>
+                          </select>
+                        ) : (
+                          item.postProcess
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4 font-bold">
+                        {editingNo === item.no ? (
+                          <input
+                            type="date"
+                            value={item.dueDate}
+                            onChange={(e) => updateBomItem(item.no, "dueDate", e.target.value)}
+                            className="h-9 rounded border px-2"
+                          />
+                        ) : (
+                          item.dueDate
+                        )}
+                      </td>
+
+                      <td className="px-5 py-4">
+                        <FileIcon type="pdf" />
+                      </td>
+                      <td className="px-5 py-4">
+                        <FileIcon type="dwg" />
+                      </td>
+                      <td className="px-5 py-4">
+                        <FileIcon type="step" />
+                      </td>
                       <td className="px-5 py-4">{item.note}</td>
+
                       <td className="px-5 py-4">
                         <div className="flex gap-2 text-xs font-bold">
-                          <button type="button" onClick={() => setEditingNo(editingNo === item.no ? null : item.no)} className="rounded border px-2 py-1">
+                          <button
+                            type="button"
+                            onClick={() => setEditingNo(editingNo === item.no ? null : item.no)}
+                            className="rounded border px-2 py-1 hover:border-black"
+                          >
                             {editingNo === item.no ? "완료" : "수정"}
                           </button>
-                          <button type="button" onClick={() => handleDeleteItem(item.no)} className="rounded border px-2 py-1">
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteItem(item.no)}
+                            className="rounded border px-2 py-1 hover:border-red-500 hover:text-red-500"
+                          >
                             삭제
                           </button>
                         </div>
@@ -335,19 +526,31 @@ export default function BidNewPage() {
               </div>
 
               <div className="grid grid-cols-3 gap-5 p-6">
-                {["재질 / 규격", "공차", "표면처리", "후처리", "검사 조건", "포장 조건"].map((label) => (
-                  <label key={label} className="space-y-2">
-                    <span className="text-xs font-bold text-gray-600">{label}</span>
-                    <select className="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm">
-                      <option>도면 기준</option>
-                    </select>
-                  </label>
-                ))}
+                {["재질 / 규격", "공차", "표면처리", "후처리", "검사 조건", "포장 조건"].map(
+                  (label) => (
+                    <label key={label} className="space-y-2">
+                      <span className="text-xs font-bold text-gray-600">{label}</span>
+                      <select className="h-10 w-full rounded-lg border border-gray-300 px-3 text-sm">
+                        <option>도면 기준</option>
+                        <option>별도 협의</option>
+                      </select>
+                    </label>
+                  ),
+                )}
 
                 <label className="col-span-3 space-y-2">
-                  <span className="text-xs font-bold text-gray-600">특이사항 / 추가 요구사항</span>
-                  <textarea value={requirementMemo} onChange={(e) => setRequirementMemo(e.target.value.slice(0, 1000))} className="h-20 w-full resize-none rounded-lg border border-gray-300 p-4 text-sm" />
-                  <p className="text-right text-xs text-gray-500">{requirementMemo.length} / 1000</p>
+                  <span className="text-xs font-bold text-gray-600">
+                    특이사항 / 추가 요구사항
+                  </span>
+                  <textarea
+                    value={requirementMemo}
+                    onChange={(e) => setRequirementMemo(e.target.value.slice(0, 1000))}
+                    className="h-20 w-full resize-none rounded-lg border border-gray-300 p-4 text-sm"
+                    placeholder="특이사항이나 추가 요구사항이 있으면 입력하세요."
+                  />
+                  <p className="text-right text-xs text-gray-500">
+                    {requirementMemo.length} / 1000
+                  </p>
                 </label>
               </div>
             </div>
@@ -383,12 +586,35 @@ export default function BidNewPage() {
 
                 <label className="col-span-3 space-y-2">
                   <span className="text-xs font-bold text-gray-600">기타 전달사항</span>
-                  <textarea value={message} onChange={(e) => setMessage(e.target.value.slice(0, 500))} className="h-20 w-full resize-none rounded-lg border border-gray-300 p-4 text-sm" />
+                  <textarea
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value.slice(0, 500))}
+                    className="h-20 w-full resize-none rounded-lg border border-gray-300 p-4 text-sm"
+                    placeholder="업체에 전달할 기타 메시지를 입력하세요."
+                  />
                   <p className="text-right text-xs text-gray-500">{message.length} / 500</p>
                 </label>
               </div>
             </div>
           </section>
+
+          <div className="mt-5 flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={() => alert("임시 저장되었습니다.")}
+              className="h-11 rounded-xl border border-gray-300 bg-white px-8 text-sm font-bold"
+            >
+              임시 저장
+            </button>
+
+            <button
+              type="button"
+              onClick={() => alert("입찰 요청이 등록되었습니다.")}
+              className="h-11 rounded-xl bg-black px-10 text-sm font-bold text-white"
+            >
+              입찰 요청 등록
+            </button>
+          </div>
         </section>
       </div>
     </main>
