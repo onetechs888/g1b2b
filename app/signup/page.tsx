@@ -3,17 +3,11 @@
 import { useState } from "react";
 import Link from "next/link";
 import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
 import {
   ArrowLeft,
   ArrowRight,
   Building2,
   Check,
-  ChevronDown,
   Eye,
   EyeOff,
   Factory,
@@ -22,6 +16,11 @@ import {
   Database,
   BarChart3,
 } from "lucide-react";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 type SignupType = "customer" | "partner";
 
@@ -51,13 +50,12 @@ export default function SignupPage() {
     expectedMonthlyOrder: "",
     interestedServices: [] as string[],
 
-    processes: "",
     equipment: "",
-    materials: "",
+    qualityEquipment: "",
     availableRegions: "",
     qualityCertifications: [] as string[],
-    companyIntro: "",
     mainProducts: "",
+    companyIntro: "",
   });
 
   const updateField = (field: string, value: string) => {
@@ -70,6 +68,7 @@ export default function SignupPage() {
   ) => {
     setFormData((prev) => {
       const current = prev[field];
+
       return {
         ...prev,
         [field]: current.includes(value)
@@ -82,83 +81,82 @@ export default function SignupPage() {
   const goNext = () => setStep((prev) => Math.min(prev + 1, 4));
   const goPrev = () => setStep((prev) => Math.max(prev - 1, 1));
 
+  const handleSignupSubmit = async () => {
+    try {
+      console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
+      console.log("SUPABASE KEY 있음:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
-const handleSignupSubmit = async () => {
-  try {
-    console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-    console.log("SUPABASE KEY 있음:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+      setErrorMessage("");
 
-    setErrorMessage("");
+      if (!formData.email || !formData.password) {
+        setErrorMessage("이메일과 비밀번호를 입력해주세요.");
+        return;
+      }
 
-    if (!formData.email || !formData.password) {
-      setErrorMessage("이메일과 비밀번호를 입력해주세요.");
-      return;
-    }
+      if (formData.password !== formData.passwordConfirm) {
+        setErrorMessage("비밀번호가 일치하지 않습니다.");
+        return;
+      }
 
-    if (formData.password !== formData.passwordConfirm) {
-      setErrorMessage("비밀번호가 일치하지 않습니다.");
-      return;
-    }
+      setIsSubmitting(true);
 
-    setIsSubmitting(true);
+      console.log("회원가입 시작:", formData);
 
-    console.log("회원가입 시작:", formData);
-
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email: formData.email,
-      password: formData.password,
-      options: {
-        data: {
-          role: signupType,
-          company_name: formData.companyName,
-          name: formData.name,
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password,
+        options: {
+          data: {
+            role: signupType,
+            company_name: formData.companyName,
+            name: formData.name,
+          },
         },
-      },
-    });
+      });
 
-    if (authError) throw authError;
+      if (authError) throw authError;
 
-    const userId = authData.user?.id;
+      const userId = authData.user?.id;
 
-    if (!userId) {
-      throw new Error("auth user id가 생성되지 않았습니다.");
+      if (!userId) {
+        throw new Error("auth user id가 생성되지 않았습니다.");
+      }
+
+      console.log("Auth 생성 완료:", userId);
+
+      const { data: companyData, error: companyError } = await supabase
+        .from("companies")
+        .insert({
+          company_name: formData.companyName,
+          business_number: formData.businessNumber,
+          industry: formData.industry,
+          company_type: signupType,
+        })
+        .select("id")
+        .single();
+
+      if (companyError) {
+        console.error("companies insert 실패:", companyError);
+        throw companyError;
+      }
+
+      console.log("companies 생성 완료:", companyData);
+
+      setStep(4);
+    } catch (error: unknown) {
+      console.error("회원가입 실패 전체:", error);
+
+      if (typeof error === "object" && error !== null) {
+        console.error("회원가입 실패 상세:", JSON.stringify(error, null, 2));
+        setErrorMessage(JSON.stringify(error, null, 2));
+      } else {
+        setErrorMessage(String(error));
+      }
+    } finally {
+      setIsSubmitting(false);
     }
+  };
 
-console.log("Auth 생성 완료:", userId);
-
-const { data: companyData, error: companyError } =
-  await supabase
-    .from("companies")
-.insert({
-  company_name: formData.companyName,
-  business_number: formData.businessNumber,
-  industry: formData.industry,
-  company_type: signupType,
-})
-    .select("id")
-    .single();
-
-if (companyError) {
-  console.error("companies insert 실패:", companyError);
-  throw companyError;
-}
-
-console.log("companies 생성 완료:", companyData);
-
-setStep(4);
-  } catch (error: unknown) {
-    console.error("회원가입 실패 전체:", error);
-
-    if (typeof error === "object" && error !== null) {
-      console.error("회원가입 실패 상세:", JSON.stringify(error, null, 2));
-      setErrorMessage(JSON.stringify(error, null, 2));
-    } else {
-      setErrorMessage(String(error));
-    }
-  } finally {
-    setIsSubmitting(false);
-  }
-};
   return (
     <main className="min-h-screen bg-white text-slate-950">
       <div className="grid min-h-screen grid-cols-1 lg:grid-cols-[45%_55%]">
@@ -169,9 +167,13 @@ setStep(4);
 
           <div className="relative z-10">
             <div className="mb-20 flex items-center gap-4">
-              <div className="text-5xl font-black tracking-tight">
+              <Link
+                href="/"
+                className="text-5xl font-black tracking-tight transition hover:opacity-80"
+              >
                 G<span className="text-[#145BFF]">1</span>
-              </div>
+              </Link>
+
               <div className="text-xs font-bold uppercase tracking-[0.16em]">
                 Manufacturing
                 <br />
@@ -205,6 +207,7 @@ setStep(4);
             <Link href="/" className="mb-8 block text-4xl font-black tracking-tight">
               G<span className="text-[#145BFF]">1</span>
             </Link>
+
             <p className="mb-12 text-sm font-bold">회원가입</p>
 
             <div className="space-y-6">
@@ -226,6 +229,7 @@ setStep(4);
                     >
                       {done ? <Check size={13} /> : number}
                     </div>
+
                     <span
                       className={`text-xs font-semibold ${
                         active ? "text-[#145BFF]" : "text-slate-500"
@@ -251,7 +255,12 @@ setStep(4);
                       icon={<Building2 />}
                       title="고객사 가입"
                       desc="제조 프로젝트 등록, 발주 요청, 생산 진행률, 품질 및 출하 상태를 확인하는 기업 계정입니다."
-                      items={["프로젝트 / 발주 등록", "BOM 진행 확인", "QC 상태 확인", "출하 상태 확인"]}
+                      items={[
+                        "프로젝트 / 발주 등록",
+                        "BOM 진행 확인",
+                        "QC 상태 확인",
+                        "출하 상태 확인",
+                      ]}
                       onClick={() => setSignupType("customer")}
                     />
 
@@ -260,12 +269,18 @@ setStep(4);
                       icon={<Factory />}
                       title="파트너사 가입"
                       desc="생산 실행, 견적 대응, 공정 업데이트, 검사 요청 및 출하 대응을 수행하는 제조 파트너 계정입니다."
-                      items={["견적 / 발주 대응", "생산 진행 업데이트", "QC 요청", "출하 요청"]}
+                      items={[
+                        "견적 / 발주 대응",
+                        "생산 진행 업데이트",
+                        "QC 요청",
+                        "출하 요청",
+                      ]}
                       onClick={() => setSignupType("partner")}
                     />
                   </div>
 
                   <NoticeBox text="가입 유형에 따라 입력 정보가 다르게 구성됩니다. 정확한 유형 선택이 원활한 서비스 이용에 도움이 됩니다." />
+
                   <BottomButtons onlyNext onNext={goNext} />
                 </>
               )}
@@ -275,25 +290,63 @@ setStep(4);
                   <StepHeader step="STEP 2" title="기본 회사 정보를 입력해주세요." />
 
                   <div className="mt-7 grid gap-5 md:grid-cols-2">
-                    <Input label="회사명" value={formData.companyName} onChange={(v) => updateField("companyName", v)} />
-                    <Input label="사업자등록번호" value={formData.businessNumber} onChange={(v) => updateField("businessNumber", v)} />
-                    <Input label="담당자명" value={formData.name} onChange={(v) => updateField("name", v)} />
-                    <Input label="이메일" value={formData.email} onChange={(v) => updateField("email", v)} />
-                    <Input label="연락처" value={formData.phone} onChange={(v) => updateField("phone", v)} />
-                    <Input label="지역" value={formData.region} onChange={(v) => updateField("region", v)} />
-<PasswordInput
-  label="비밀번호"
-  value={formData.password}
-  onChange={(v: string) => updateField("password", v)}
-  show={showPassword}
-  onToggle={() => setShowPassword((p) => !p)}
-/>
+                    <Input
+                      label="회사명"
+                      value={formData.companyName}
+                      onChange={(v: string) => updateField("companyName", v)}
+                    />
 
-<PasswordInput
-  label="비밀번호 확인"
-  value={formData.passwordConfirm}
-  onChange={(v: string) => updateField("passwordConfirm", v)} show={showPasswordConfirm} onToggle={() => setShowPasswordConfirm((p) => !p)} />
-                    <Input label="업종" value={formData.industry} onChange={(v) => updateField("industry", v)} />
+                    <Input
+                      label="사업자등록번호"
+                      value={formData.businessNumber}
+                      onChange={(v: string) => updateField("businessNumber", v)}
+                    />
+
+                    <Input
+                      label="담당자명"
+                      value={formData.name}
+                      onChange={(v: string) => updateField("name", v)}
+                    />
+
+                    <Input
+                      label="이메일"
+                      value={formData.email}
+                      onChange={(v: string) => updateField("email", v)}
+                    />
+
+                    <Input
+                      label="연락처"
+                      value={formData.phone}
+                      onChange={(v: string) => updateField("phone", v)}
+                    />
+
+                    <Input
+                      label="지역"
+                      value={formData.region}
+                      onChange={(v: string) => updateField("region", v)}
+                    />
+
+                    <PasswordInput
+                      label="비밀번호"
+                      value={formData.password}
+                      onChange={(v: string) => updateField("password", v)}
+                      show={showPassword}
+                      onToggle={() => setShowPassword((prev) => !prev)}
+                    />
+
+                    <PasswordInput
+                      label="비밀번호 확인"
+                      value={formData.passwordConfirm}
+                      onChange={(v: string) => updateField("passwordConfirm", v)}
+                      show={showPasswordConfirm}
+                      onToggle={() => setShowPasswordConfirm((prev) => !prev)}
+                    />
+
+                    <Input
+                      label="업종"
+                      value={formData.industry}
+                      onChange={(v: string) => updateField("industry", v)}
+                    />
                   </div>
 
                   <BottomButtons onPrev={goPrev} onNext={goNext} />
@@ -311,6 +364,7 @@ setStep(4);
                           : "파트너사 정보를 입력해주세요."
                       }
                     />
+
                     <span className="rounded-md border border-[#145BFF] px-3 py-2 text-xs font-bold text-[#145BFF]">
                       {signupType === "customer" ? "고객사 가입" : "파트너사 가입"}
                     </span>
@@ -385,31 +439,60 @@ function StepHeader({ step, title }: { step: string; title: string }) {
   return (
     <div>
       <p className="mb-3 text-xs font-extrabold text-[#145BFF]">{step}</p>
-      <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950">{title}</h1>
+      <h1 className="text-2xl font-extrabold tracking-[-0.03em] text-slate-950">
+        {title}
+      </h1>
     </div>
   );
 }
 
-function TypeCard({ active, icon, title, desc, items, onClick }: any) {
+function TypeCard({
+  active,
+  icon,
+  title,
+  desc,
+  items,
+  onClick,
+}: {
+  active: boolean;
+  icon: React.ReactNode;
+  title: string;
+  desc: string;
+  items: string[];
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={`rounded-2xl border bg-white px-7 py-8 text-left transition ${
-        active ? "border-[#145BFF] shadow-sm" : "border-slate-200 hover:border-slate-300 hover:shadow-sm"
+        active
+          ? "border-[#145BFF] shadow-sm"
+          : "border-slate-200 hover:border-slate-300 hover:shadow-sm"
       }`}
     >
       <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-blue-50 text-[#145BFF] [&_svg]:h-10 [&_svg]:w-10">
         {icon}
       </div>
-      <h2 className={`mb-4 text-center text-xl font-extrabold ${active ? "text-[#145BFF]" : "text-slate-900"}`}>
+
+      <h2
+        className={`mb-4 text-center text-xl font-extrabold ${
+          active ? "text-[#145BFF]" : "text-slate-900"
+        }`}
+      >
         {title}
       </h2>
-      <p className="mb-6 min-h-[72px] text-center text-sm leading-6 text-slate-600">{desc}</p>
+
+      <p className="mb-6 min-h-[72px] text-center text-sm leading-6 text-slate-600">
+        {desc}
+      </p>
+
       <div className="mb-5 h-px bg-slate-200" />
+
       <p className="mb-3 text-sm font-bold text-slate-700">주요 기능</p>
+
       <ul className="space-y-2">
-        {items.map((item: string) => (
+        {items.map((item) => (
           <li key={item} className="flex items-center gap-2 text-sm text-slate-700">
             <Check size={15} className="text-[#145BFF]" />
             {item}
@@ -420,13 +503,22 @@ function TypeCard({ active, icon, title, desc, items, onClick }: any) {
   );
 }
 
-function Input({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function Input({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-bold text-slate-700">{label}</span>
+
       <input
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(event) => onChange(event.target.value)}
         placeholder={`${label} 입력`}
         className="h-11 w-full rounded-lg border border-slate-300 px-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-[#145BFF]"
       />
@@ -434,18 +526,32 @@ function Input({ label, value, onChange }: { label: string; value: string; onCha
   );
 }
 
-function PasswordInput({ label, value, onChange, show, onToggle }: any) {
+function PasswordInput({
+  label,
+  value,
+  onChange,
+  show,
+  onToggle,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  show: boolean;
+  onToggle: () => void;
+}) {
   return (
     <label className="block">
       <span className="mb-2 block text-xs font-bold text-slate-700">{label}</span>
+
       <div className="flex h-11 items-center rounded-lg border border-slate-300 px-3 transition focus-within:border-[#145BFF]">
         <input
           type={show ? "text" : "password"}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(event) => onChange(event.target.value)}
           placeholder={`${label} 입력`}
           className="h-full w-full text-sm outline-none placeholder:text-slate-400"
         />
+
         <button type="button" onClick={onToggle} className="text-slate-400">
           {show ? <EyeOff size={17} /> : <Eye size={17} />}
         </button>
@@ -454,30 +560,127 @@ function PasswordInput({ label, value, onChange, show, onToggle }: any) {
   );
 }
 
-function CustomerFields({ formData, updateField, toggleArrayField }: any) {
+function CustomerFields({
+  formData,
+  updateField,
+  toggleArrayField,
+}: {
+  formData: {
+    mainOrderItems: string;
+    manufacturingFields: string;
+    expectedMonthlyOrder: string;
+    interestedServices: string[];
+  };
+  updateField: (field: string, value: string) => void;
+  toggleArrayField: (
+    field: "interestedServices" | "qualityCertifications",
+    value: string
+  ) => void;
+}) {
   return (
     <div className="mt-7 space-y-5">
-<Input label="주요 발주 품목" value={formData.mainOrderItems} onChange={(v: string) => updateField("mainOrderItems", v)} />
-<Input label="제조 요청 분야" value={formData.manufacturingFields} onChange={(v: string) => updateField("manufacturingFields", v)} />
-<Input label="예상 월 발주 규모" value={formData.expectedMonthlyOrder} onChange={(v: string) => updateField("expectedMonthlyOrder", v)} />
-      <CheckGrid field="interestedServices" selected={formData.interestedServices} onToggle={toggleArrayField} items={["프로젝트 관리", "생산 진행 관리", "품질 관리", "출하 관리", "파트너 네트워크", "데이터 분석"]} />
+      <Input
+        label="주요 발주 품목"
+        value={formData.mainOrderItems}
+        onChange={(v: string) => updateField("mainOrderItems", v)}
+      />
+
+      <Input
+        label="제조 요청 분야"
+        value={formData.manufacturingFields}
+        onChange={(v: string) => updateField("manufacturingFields", v)}
+      />
+
+      <Input
+        label="예상 월 발주 규모"
+        value={formData.expectedMonthlyOrder}
+        onChange={(v: string) => updateField("expectedMonthlyOrder", v)}
+      />
+
+      <CheckGrid
+        title="관심 서비스"
+        field="interestedServices"
+        selected={formData.interestedServices}
+        onToggle={toggleArrayField}
+        items={[
+          "프로젝트 관리",
+          "생산 진행 관리",
+          "품질 관리",
+          "출하 관리",
+          "파트너 네트워크",
+          "데이터 분석",
+        ]}
+      />
     </div>
   );
 }
 
-function PartnerFields({ formData, updateField, toggleArrayField }: any) {
+function PartnerFields({
+  formData,
+  updateField,
+  toggleArrayField,
+}: {
+  formData: {
+    equipment: string;
+    qualityEquipment: string;
+    qualityCertifications: string[];
+    mainProducts: string;
+    companyIntro: string;
+  };
+  updateField: (field: string, value: string) => void;
+  toggleArrayField: (
+    field: "interestedServices" | "qualityCertifications",
+    value: string
+  ) => void;
+}) {
   return (
     <div className="mt-7 space-y-5">
-<Input label="보유 공정" value={formData.processes} onChange={(v: string) => updateField("processes", v)} />
-<Input label="보유 장비" value={formData.equipment} onChange={(v: string) => updateField("equipment", v)} />
-<Input label="생산 가능 소재" value={formData.materials} onChange={(v: string) => updateField("materials", v)} />
-<Input label="대응 가능 지역" value={formData.availableRegions} onChange={(v: string) => updateField("availableRegions", v)} />
-<Input label="주요 생산 품목" value={formData.mainProducts} onChange={(v: string) => updateField("mainProducts", v)} />
+      <Input
+        label="보유 생산설비"
+        value={formData.equipment}
+        onChange={(v: string) => updateField("equipment", v)}
+      />
+
+      <Input
+        label="보유 품질설비(측정기)"
+        value={formData.qualityEquipment}
+        onChange={(v: string) => updateField("qualityEquipment", v)}
+      />
+
+      <CheckGrid
+        title="품질 인증"
+        field="qualityCertifications"
+        selected={formData.qualityCertifications}
+        onToggle={toggleArrayField}
+    items={[
+  "ISO 9001",
+  "IATF 16949",
+  "AS9100",
+  "ISO 13485",
+  "SQ 인증",
+  "SSQ 인증",
+  "미보유",
+]}
+      />
+<Input
+  label="대응 가능 지역"
+  value={formData.availableRegions}
+  onChange={(v: string) => updateField("availableRegions", v)}
+/>
+      <Input
+        label="주요 생산 품목"
+        value={formData.mainProducts}
+        onChange={(v: string) => updateField("mainProducts", v)}
+      />
+
       <label className="block">
-        <span className="mb-2 block text-xs font-bold text-slate-700">회사 소개</span>
+        <span className="mb-2 block text-xs font-bold text-slate-700">
+          회사 소개
+        </span>
+
         <textarea
           value={formData.companyIntro}
-          onChange={(e) => updateField("companyIntro", e.target.value)}
+          onChange={(event) => updateField("companyIntro", event.target.value)}
           placeholder="회사 소개 및 주요 제조 역량을 입력하세요"
           className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-[#145BFF]"
         />
@@ -486,12 +689,28 @@ function PartnerFields({ formData, updateField, toggleArrayField }: any) {
   );
 }
 
-function CheckGrid({ field, selected, onToggle, items }: any) {
+function CheckGrid({
+  title,
+  field,
+  selected,
+  onToggle,
+  items,
+}: {
+  title: string;
+  field: "interestedServices" | "qualityCertifications";
+  selected: string[];
+  onToggle: (
+    field: "interestedServices" | "qualityCertifications",
+    value: string
+  ) => void;
+  items: string[];
+}) {
   return (
     <div>
-      <p className="mb-3 text-xs font-bold text-slate-700">선택 항목</p>
+      <p className="mb-3 text-xs font-bold text-slate-700">{title}</p>
+
       <div className="grid gap-3 md:grid-cols-3">
-        {items.map((item: string) => (
+        {items.map((item) => (
           <label key={item} className="flex items-center gap-2 text-sm text-slate-700">
             <input
               type="checkbox"
@@ -508,22 +727,47 @@ function CheckGrid({ field, selected, onToggle, items }: any) {
 }
 
 function NoticeBox({ text }: { text: string }) {
-  return <div className="mt-8 rounded-xl bg-slate-50 px-5 py-5 text-sm leading-6 text-slate-600">{text}</div>;
+  return (
+    <div className="mt-8 rounded-xl bg-slate-50 px-5 py-5 text-sm leading-6 text-slate-600">
+      {text}
+    </div>
+  );
 }
 
-function BottomButtons({ onlyNext, onPrev, onNext, nextText = "다음", disabled = false }: any) {
+function BottomButtons({
+  onlyNext,
+  onPrev,
+  onNext,
+  nextText = "다음",
+  disabled = false,
+}: {
+  onlyNext?: boolean;
+  onPrev?: () => void;
+  onNext?: () => void;
+  nextText?: string;
+  disabled?: boolean;
+}) {
   return (
     <div className="mt-10 flex justify-between gap-4">
       {onlyNext ? (
         <div />
       ) : (
-        <button type="button" onClick={onPrev} className="flex h-[52px] w-40 items-center justify-center gap-2 rounded-lg border border-slate-300 text-sm font-bold text-slate-700 transition hover:bg-slate-50">
+        <button
+          type="button"
+          onClick={onPrev}
+          className="flex h-[52px] w-40 items-center justify-center gap-2 rounded-lg border border-slate-300 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+        >
           <ArrowLeft size={16} />
           이전
         </button>
       )}
 
-      <button type="button" onClick={onNext} disabled={disabled} className="flex h-[52px] w-40 items-center justify-center gap-2 rounded-lg bg-[#145BFF] text-sm font-bold text-white transition hover:bg-[#0647C8] disabled:cursor-not-allowed disabled:bg-slate-400">
+      <button
+        type="button"
+        onClick={onNext}
+        disabled={disabled}
+        className="flex h-[52px] w-40 items-center justify-center gap-2 rounded-lg bg-[#145BFF] text-sm font-bold text-white transition hover:bg-[#0647C8] disabled:cursor-not-allowed disabled:bg-slate-400"
+      >
         {nextText}
         {!disabled && <ArrowRight size={16} />}
       </button>
