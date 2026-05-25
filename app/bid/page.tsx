@@ -1,258 +1,501 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
+
+type BidStatus =
+  | "입찰 진행중"
+  | "검토중"
+  | "입찰 준비중"
+  | "업체 선정"
+  | "입찰 완료";
+
+type BidProject = {
+  id: number;
+  bidNo: string;
+  projectName: string;
+  poNo: string;
+  bomCount: number;
+  partners: number;
+  dueDate: string;
+  progress: number;
+  status: BidStatus;
+  dday: string;
+  urgent?: boolean;
+};
+
+const projects: BidProject[] = [
+  {
+    id: 1,
+    bidNo: "BID-2026-0058",
+    projectName: "반도체 장비 프레임 제작",
+    poNo: "PO-2026-0031",
+    bomCount: 48,
+    partners: 8,
+    dueDate: "2026-05-26 17:00",
+    progress: 75,
+    status: "입찰 진행중",
+    dday: "D-3",
+    urgent: true,
+  },
+  {
+    id: 2,
+    bidNo: "BID-2026-0057",
+    projectName: "정밀 지그 플레이트 제작",
+    poNo: "PO-2026-0030",
+    bomCount: 29,
+    partners: 5,
+    dueDate: "2026-05-28 17:00",
+    progress: 55,
+    status: "입찰 진행중",
+    dday: "D-5",
+  },
+  {
+    id: 3,
+    bidNo: "BID-2026-0056",
+    projectName: "자동화 라인 브라켓류 제작",
+    poNo: "PO-2026-0028",
+    bomCount: 32,
+    partners: 6,
+    dueDate: "2026-05-30 17:00",
+    progress: 60,
+    status: "입찰 진행중",
+    dday: "D-7",
+  },
+  {
+    id: 4,
+    bidNo: "BID-2026-0055",
+    projectName: "디스플레이 장비 부품 제작",
+    poNo: "PO-2026-0027",
+    bomCount: 22,
+    partners: 4,
+    dueDate: "2026-05-31 17:00",
+    progress: 40,
+    status: "검토중",
+    dday: "D-8",
+  },
+  {
+    id: 5,
+    bidNo: "BID-2026-0054",
+    projectName: "의료기기 하우징 가공",
+    poNo: "PO-2026-0025",
+    bomCount: 26,
+    partners: 5,
+    dueDate: "2026-06-01 17:00",
+    progress: 45,
+    status: "입찰 진행중",
+    dday: "D-9",
+  },
+  {
+    id: 6,
+    bidNo: "BID-2026-0052",
+    projectName: "UAM 프레임 부품 제작",
+    poNo: "PO-2026-0022",
+    bomCount: 63,
+    partners: 7,
+    dueDate: "2026-06-06 17:00",
+    progress: 30,
+    status: "검토중",
+    dday: "D-14",
+  },
+  {
+    id: 7,
+    bidNo: "BID-2026-0049",
+    projectName: "산업용 로봇 암 부품",
+    poNo: "PO-2026-0018",
+    bomCount: 41,
+    partners: 6,
+    dueDate: "2026-06-12 17:00",
+    progress: 20,
+    status: "검토중",
+    dday: "-",
+  },
+  {
+    id: 8,
+    bidNo: "BID-2026-0047",
+    projectName: "수소밸브 바디 가공",
+    poNo: "PO-2026-0015",
+    bomCount: 18,
+    partners: 4,
+    dueDate: "2026-06-18 17:00",
+    progress: 10,
+    status: "입찰 준비중",
+    dday: "-",
+  },
+];
+
+function StatusBadge({ status }: { status: BidStatus }) {
+  const styles: Record<BidStatus, string> = {
+    "입찰 진행중": "bg-red-50 text-red-600 border-red-100",
+    검토중: "bg-blue-50 text-blue-600 border-blue-100",
+    "입찰 준비중": "bg-gray-100 text-gray-600 border-gray-200",
+    "업체 선정": "bg-green-50 text-green-600 border-green-100",
+    "입찰 완료": "bg-black text-white border-black",
+  };
+
+  return (
+    <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${styles[status]}`}>
+      {status}
+    </span>
+  );
+}
+
+function DdayBadge({ dday }: { dday: string }) {
+  return (
+    <span
+      className={`rounded-full px-3 py-1 text-xs font-bold ${
+        dday === "D-3"
+          ? "bg-red-100 text-red-600"
+          : dday === "D-5" || dday === "D-7"
+            ? "bg-orange-100 text-orange-600"
+            : dday === "-"
+              ? "bg-gray-100 text-gray-500"
+              : "bg-gray-100 text-gray-600"
+      }`}
+    >
+      {dday}
+    </span>
+  );
+}
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="w-10 text-xs font-bold">{value}%</span>
+      <div className="h-2 w-20 overflow-hidden rounded-full bg-gray-200">
+        <div
+          className={`h-full rounded-full ${
+            value >= 70 ? "bg-red-500" : value >= 40 ? "bg-orange-400" : "bg-blue-500"
+          }`}
+          style={{ width: `${value}%` }}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function BidPage() {
-  const categories = [
-    "전체",
-    "MCT · CNC 가공",
-    "판금 · 레이저",
-    "사출성형",
-    "용접 · 제관",
-    "연삭 가공",
-    "후가공",
-  ];
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("전체");
 
-  const bids = [
-    {
-      id: 1,
-      title: "알루미늄 브라켓 CNC 가공",
-      category: "MCT · CNC 가공",
-      deadline: "2026-06-30",
-      grade: "D 등급 이상",
-      file: "bracket_sample.pdf",
-    },
-    {
-      id: 2,
-      title: "판금 케이스 제작",
-      category: "판금 · 레이저",
-      deadline: "2026-07-10",
-      grade: "C 등급 이상",
-      file: "case_drawing.dxf",
-    },
-    {
-      id: 3,
-      title: "사출 하우징 시제품 제작",
-      category: "사출성형",
-      deadline: "2026-07-18",
-      grade: "C 등급 이상",
-      file: "housing_step.stp",
-    },
-    {
-      id: 4,
-      title: "스테인리스 용접 프레임 제작",
-      category: "용접 · 제관",
-      deadline: "2026-07-25",
-      grade: "B 등급 이상",
-      file: "frame_drawing.pdf",
-    },
-    {
-      id: 5,
-      title: "정밀 샤프트 연삭 가공",
-      category: "연삭 가공",
-      deadline: "2026-08-02",
-      grade: "B 등급 이상",
-      file: "shaft_dwg.dwg",
-    },
-    {
-      id: 6,
-      title: "알루미늄 압출 부품 후가공",
-      category: "후가공",
-      deadline: "2026-08-12",
-      grade: "D 등급 이상",
-      file: "extrusion_part.dxf",
-    },
-  ];
+  const filteredProjects = useMemo(() => {
+    return projects.filter((item) => {
+      const matchSearch =
+        item.projectName.includes(search) ||
+        item.bidNo.includes(search) ||
+        item.poNo.includes(search);
 
-  const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [categorySearch, setCategorySearch] = useState("");
-  const [gradeSearch, setGradeSearch] = useState("");
-  const [deadlineSearch, setDeadlineSearch] = useState("");
+      const matchStatus = statusFilter === "전체" ? true : item.status === statusFilter;
 
-  const filteredBids = bids.filter((bid) => {
-    const matchesCategory =
-      selectedCategory === "전체" || bid.category === selectedCategory;
-
-    const matchesCategorySearch = bid.category
-      .toLowerCase()
-      .includes(categorySearch.toLowerCase());
-
-    const matchesGrade = bid.grade
-      .toLowerCase()
-      .includes(gradeSearch.toLowerCase());
-
-    const matchesDeadline = bid.deadline
-      .toLowerCase()
-      .includes(deadlineSearch.toLowerCase());
-
-    return (
-      matchesCategory &&
-      matchesCategorySearch &&
-      matchesGrade &&
-      matchesDeadline
-    );
-  });
+      return matchSearch && matchStatus;
+    });
+  }, [search, statusFilter]);
 
   return (
     <main className="min-h-screen bg-[#f6f6f4] text-black">
-      {/* Hero */}
-      <section className="relative overflow-hidden border-b border-gray-200">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{
-            backgroundImage: "url('/images/bid-bg.png')",
-          }}
-        />
+      <div className="grid min-h-screen grid-cols-[260px_1fr]">
+        <aside className="border-r border-gray-200 bg-white px-4 py-8">
+          <div className="mb-12 px-2">
+            <h2 className="text-4xl font-extrabold tracking-tight">G1B2B</h2>
+            <p className="mt-2 text-sm text-gray-500">Manufacturing OS</p>
+          </div>
 
-        <div className="absolute inset-0 bg-gradient-to-r from-[#f6f6f4] via-[#f6f6f4]/95 to-[#f6f6f4]/30" />
-
-        <div className="relative max-w-7xl mx-auto px-8 py-24">
-          <div className="max-w-2xl">
-            <p className="text-sm font-semibold text-gray-500 mb-4">
-              Manufacturing Bid
-            </p>
-
-            <h1 className="text-5xl font-extrabold leading-tight mb-6">
-              제조 프로젝트,
-              <br />
-              투명하게 입찰하세요
-            </h1>
-
-            <p className="text-base text-gray-600 leading-relaxed mb-8">
-              도면과 요구사항을 기반으로 검증된 파트너들의 견적을 비교하고,
-              최적의 제조 파트너를 선택할 수 있습니다.
-            </p>
-
-            <a
-              href="/bid/new"
-              className="inline-block bg-black text-white px-6 py-3 rounded-xl text-sm font-semibold hover:opacity-90 transition"
+          <nav className="space-y-3">
+            <Link
+              href="/workspace"
+              className="block rounded-2xl border border-gray-200 bg-white p-4 hover:bg-gray-50"
             >
-              입찰 등록하기
-            </a>
+              <div className="text-sm font-extrabold">업무관리</div>
+            </Link>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="text-sm font-extrabold">입찰</div>
+                <span className="text-xs">⌃</span>
+              </div>
+
+              <div className="space-y-2">
+                <Link href="/bid" className="block rounded-xl bg-black px-3 py-2 text-sm font-bold text-white">
+                  입찰 목록
+                </Link>
+                <Link href="/bid/1" className="block rounded-xl px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100">
+                  입찰 상세
+                </Link>
+                <Link href="/bid/new" className="block rounded-xl px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100">
+                  입찰 등록
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white p-4">
+              <div className="mb-4 flex items-center justify-between">
+                <div className="text-sm font-extrabold">발주</div>
+                <span className="text-xs">⌃</span>
+              </div>
+
+              <div className="space-y-2">
+                <Link href="/order" className="block rounded-xl px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100">
+                  발주 목록
+                </Link>
+                <Link href="/order/1" className="block rounded-xl px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100">
+                  발주 상세
+                </Link>
+                <Link href="/order/new" className="block rounded-xl px-3 py-2 text-sm font-bold text-gray-700 hover:bg-gray-100">
+                  발주 등록
+                </Link>
+              </div>
+            </div>
+          </nav>
+
+          <div className="mt-24 rounded-2xl border border-gray-200 bg-white p-4">
+            <p className="text-sm font-extrabold">G1B2B 운영센터</p>
+            <p className="mt-2 text-xs text-gray-500">support@g1b2b.com</p>
+            <p className="text-xs text-gray-500">070-1234-5678</p>
+          </div>
+        </aside>
+
+        <section className="px-8 py-7">
+          <div className="mb-8">
+            <h1 className="text-3xl font-extrabold">입찰 프로젝트</h1>
+            <p className="mt-3 text-sm text-gray-600">
+              검증된 파트너들의 견적을 비교하고, 최적의 제조 파트너를 선택하세요.
+            </p>
           </div>
 
-          <div className="mt-16 grid md:grid-cols-4 gap-4">
-            <div className="bg-white/90 backdrop-blur-md border border-gray-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-3xl font-bold mb-2">2,500+</h3>
-              <p className="text-sm text-gray-500">검증된 파트너사</p>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-md border border-gray-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-3xl font-bold mb-2">1,800+</h3>
-              <p className="text-sm text-gray-500">누적 입찰 건수</p>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-md border border-gray-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-3xl font-bold mb-2">94.2%</h3>
-              <p className="text-sm text-gray-500">견적 응답률</p>
-            </div>
-
-            <div className="bg-white/90 backdrop-blur-md border border-gray-200 rounded-3xl p-6 shadow-sm">
-              <h3 className="text-3xl font-bold mb-2">72h</h3>
-              <p className="text-sm text-gray-500">평균 견적 검토 시간</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 본문 */}
-      <section className="max-w-7xl mx-auto px-8 py-12">
-        <div className="grid lg:grid-cols-[180px_1fr] gap-6">
-          <aside className="border border-gray-200 rounded-3xl bg-white p-4 h-fit shadow-sm">
-            <h2 className="text-sm font-bold mb-4">업종별 분류</h2>
-
-            <div className="space-y-2">
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
-                  className={`w-full text-left rounded-xl px-3 py-2 text-xs transition ${
-                    selectedCategory === category
-                      ? "bg-black text-white"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-black"
-                  }`}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
-          </aside>
-
-          <section>
-            <div className="grid md:grid-cols-3 gap-3 mb-6">
-              <input
-                type="text"
-                placeholder="업종 검색"
-                value={categorySearch}
-                onChange={(e) => setCategorySearch(e.target.value)}
-                className="bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition shadow-sm"
-              />
-
-              <input
-                type="text"
-                placeholder="등급 검색"
-                value={gradeSearch}
-                onChange={(e) => setGradeSearch(e.target.value)}
-                className="bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition shadow-sm"
-              />
-
-              <input
-                type="text"
-                placeholder="마감일 검색"
-                value={deadlineSearch}
-                onChange={(e) => setDeadlineSearch(e.target.value)}
-                className="bg-white border border-gray-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-black transition shadow-sm"
-              />
-            </div>
-
-            <div className="mb-4 text-xs text-gray-500">
-              검색 결과: {filteredBids.length}개
-            </div>
-
-            <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {filteredBids.map((bid) => (
-                <div
-                  key={bid.id}
-                  className="border border-gray-200 rounded-3xl p-5 bg-white hover:border-black transition shadow-sm"
-                >
-                  <div className="flex justify-between items-start gap-3 mb-4">
-                    <h2 className="text-base font-bold leading-snug">
-                      {bid.title}
-                    </h2>
-
-                    <span className="shrink-0 text-[11px] border border-gray-300 rounded-full px-2 py-1 text-gray-600">
-                      {bid.grade}
-                    </span>
+          <section className="mb-6 grid grid-cols-5 gap-4">
+            {[
+              ["진행중 입찰 프로젝트", "12", "전체 입찰 중 48%", "P"],
+              ["참여 파트너사", "187", "누적 참여 업체 수", "U"],
+              ["BOM 품목 수", "2,846", "전체 프로젝트 기준", "B"],
+              ["평균 견적 응답 시간", "72h", "지난 30일 기준", "T"],
+              ["견적 응답률", "94.2%", "지난 30일 기준", "%"],
+            ].map(([title, value, desc, icon]) => (
+              <div key={title} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+                <div className="mb-5 flex items-center gap-3">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-black text-sm font-extrabold text-white">
+                    {icon}
                   </div>
-
-                  <div className="space-y-1.5 text-xs text-gray-600">
-                    <p>분야: {bid.category}</p>
-                    <p>마감일: {bid.deadline}</p>
-                    <p>첨부: {bid.file}</p>
-                  </div>
-
-                  <div className="mt-4 h-24 border border-dashed border-gray-300 rounded-2xl flex items-center justify-center text-xs text-gray-400 bg-gray-50">
-                    도면 미리보기
-                  </div>
-
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <a
-                      href={`/bid/${bid.id}`}
-                      className="text-center border border-gray-300 px-3 py-2 rounded-xl text-xs font-semibold hover:border-black transition"
-                    >
-                      상세 보기
-                    </a>
-
-                    <button className="bg-black text-white px-3 py-2 rounded-xl text-xs font-semibold hover:opacity-90 transition">
-                      입찰 참여
-                    </button>
-                  </div>
+                  <div className="text-sm font-bold">{title}</div>
                 </div>
-              ))}
+                <div className="text-4xl font-extrabold tracking-tight">{value}</div>
+                <div className="mt-3 text-xs font-bold text-gray-500">{desc}</div>
+              </div>
+            ))}
+          </section>
+
+          <section className="mb-6 rounded-2xl border border-gray-200 bg-white shadow-sm">
+            <div className="flex items-start justify-between border-b border-gray-200 px-6 py-5">
+              <div>
+                <div className="mb-2 flex items-center gap-3">
+                  <h2 className="text-xl font-extrabold">현재 진행중인 입찰 프로젝트</h2>
+                  <span className="rounded-full bg-red-500 px-3 py-1 text-xs font-bold text-white">6건</span>
+                </div>
+                <p className="text-sm text-gray-500">마감일이 임박했거나 활발히 진행중인 프로젝트입니다.</p>
+              </div>
+
+              <button className="rounded-xl border border-gray-300 bg-white px-5 py-2 text-sm font-bold hover:bg-gray-50">
+                전체 입찰 목록 보기 →
+              </button>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="w-full min-w-[1300px] text-sm">
+                <thead className="bg-[#fafafa] text-xs text-gray-500">
+                  <tr>
+                    <th className="px-5 py-4 text-left">긴급/마감 D-day</th>
+                    <th className="px-5 py-4 text-left">입찰번호</th>
+                    <th className="px-5 py-4 text-left">프로젝트명</th>
+                    <th className="px-5 py-4 text-left">PO 번호</th>
+                    <th className="px-5 py-4 text-left">BOM 품목 수</th>
+                    <th className="px-5 py-4 text-left">참여업체</th>
+                    <th className="px-5 py-4 text-left">마감일</th>
+                    <th className="px-5 py-4 text-left">진행상태</th>
+                    <th className="px-5 py-4 text-left">진행률</th>
+                    <th className="px-5 py-4 text-left">액션</th>
+                  </tr>
+                </thead>
+
+                <tbody className="divide-y divide-gray-200">
+                  {projects.slice(0, 6).map((item) => (
+                    <tr key={item.id} className={`hover:bg-[#fafafa] ${item.urgent ? "bg-red-50/40" : ""}`}>
+                      <td className="px-5 py-4">
+                        <DdayBadge dday={item.dday} />
+                      </td>
+                      <td className="px-5 py-4 font-bold">{item.bidNo}</td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold">{item.projectName}</span>
+                          {item.urgent && (
+                            <span className="rounded-full bg-red-500 px-2 py-1 text-[10px] font-bold text-white">
+                              긴급
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-bold">{item.poNo}</td>
+                      <td className="px-5 py-4 font-bold">{item.bomCount}</td>
+                      <td className="px-5 py-4 font-bold">{item.partners}</td>
+                      <td className="px-5 py-4 font-bold">{item.dueDate}</td>
+                      <td className="px-5 py-4">
+                        <StatusBadge status={item.status} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <ProgressBar value={item.progress} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <Link
+                          href={`/bid/${item.id}`}
+                          className="rounded-lg bg-black px-4 py-2 text-xs font-bold text-white"
+                        >
+                          상세보기
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </section>
-        </div>
-      </section>
+
+          <section className="grid grid-cols-[240px_1fr] gap-4">
+            <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
+              <h3 className="mb-5 text-lg font-extrabold">입찰 상태 필터</h3>
+
+              <div className="space-y-3">
+                {[
+                  ["전체", 25],
+                  ["입찰 진행중", 12],
+                  ["검토중", 6],
+                  ["업체 선정", 4],
+                  ["입찰 완료", 3],
+                ].map(([label, count]) => (
+                  <button
+                    key={label}
+                    onClick={() => setStatusFilter(String(label))}
+                    className={`flex w-full items-center justify-between rounded-xl px-4 py-3 text-sm font-bold ${
+                      statusFilter === label ? "bg-black text-white" : "hover:bg-gray-100"
+                    }`}
+                  >
+                    <span>{label}</span>
+                    <span>{count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-gray-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between border-b border-gray-200 p-5">
+                <div className="flex items-center gap-3">
+                  <input
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="프로젝트명 / 입찰번호 / PO 번호 검색"
+                    className="h-11 w-[320px] rounded-xl border border-gray-300 bg-white px-4 text-sm font-medium outline-none"
+                  />
+
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="h-11 rounded-xl border border-gray-300 bg-white px-4 text-sm font-bold"
+                  >
+                    <option>전체</option>
+                    <option>입찰 진행중</option>
+                    <option>검토중</option>
+                    <option>입찰 준비중</option>
+                    <option>업체 선정</option>
+                    <option>입찰 완료</option>
+                  </select>
+
+                  <select className="h-11 rounded-xl border border-gray-300 bg-white px-4 text-sm font-bold">
+                    <option>마감일 전체</option>
+                  </select>
+
+                  <button
+                    onClick={() => {
+                      setSearch("");
+                      setStatusFilter("전체");
+                    }}
+                    className="h-11 rounded-xl border border-gray-300 bg-white px-5 text-sm font-bold hover:bg-gray-50"
+                  >
+                    검색 초기화
+                  </button>
+                </div>
+
+                <Link href="/bid/new" className="flex h-11 items-center rounded-xl bg-black px-5 text-sm font-bold text-white">
+                  + 입찰 등록하기
+                </Link>
+              </div>
+
+              <div className="overflow-auto">
+                <table className="w-full min-w-[1200px] text-sm">
+                  <thead className="bg-[#fafafa] text-xs text-gray-500">
+                    <tr>
+                      <th className="px-5 py-4 text-left">입찰번호</th>
+                      <th className="px-5 py-4 text-left">프로젝트명</th>
+                      <th className="px-5 py-4 text-left">PO 번호</th>
+                      <th className="px-5 py-4 text-left">BOM 품목 수</th>
+                      <th className="px-5 py-4 text-left">참여업체</th>
+                      <th className="px-5 py-4 text-left">마감일</th>
+                      <th className="px-5 py-4 text-left">진행상태</th>
+                      <th className="px-5 py-4 text-left">진행률</th>
+                      <th className="px-5 py-4 text-left">액션</th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-gray-200">
+                    {filteredProjects.map((item) => (
+                      <tr key={item.id} className="hover:bg-[#fafafa]">
+                        <td className="px-5 py-4 font-bold">{item.bidNo}</td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="font-extrabold">{item.projectName}</span>
+                            {item.urgent && (
+                              <span className="rounded-full bg-red-500 px-2 py-1 text-[10px] font-bold text-white">
+                                긴급
+                              </span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 font-bold">{item.poNo}</td>
+                        <td className="px-5 py-4 font-bold">{item.bomCount}</td>
+                        <td className="px-5 py-4 font-bold">{item.partners}</td>
+                        <td className="px-5 py-4 font-bold">{item.dueDate}</td>
+                        <td className="px-5 py-4">
+                          <StatusBadge status={item.status} />
+                        </td>
+                        <td className="px-5 py-4">
+                          <ProgressBar value={item.progress} />
+                        </td>
+                        <td className="px-5 py-4">
+                          <Link
+                            href={`/bid/${item.id}`}
+                            className="rounded-lg bg-black px-4 py-2 text-xs font-bold text-white"
+                          >
+                            상세보기
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex items-center justify-center gap-2 border-t border-gray-200 px-6 py-5">
+                {[1, 2, 3, 4, 5].map((page) => (
+                  <button
+                    key={page}
+                    className={`flex h-10 w-10 items-center justify-center rounded-lg text-sm font-bold ${
+                      page === 1 ? "bg-black text-white" : "border border-gray-300 bg-white"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>
     </main>
   );
 }
