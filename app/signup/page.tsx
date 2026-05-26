@@ -81,28 +81,33 @@ export default function SignupPage() {
   const goNext = () => setStep((prev) => Math.min(prev + 1, 4));
   const goPrev = () => setStep((prev) => Math.max(prev - 1, 1));
 
-  const handleSignupSubmit = async () => {
-    try {
-      console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
-      console.log("SUPABASE KEY 있음:", !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const handleSignupSubmit = async () => {
+  try {
+    console.log("SUPABASE URL:", process.env.NEXT_PUBLIC_SUPABASE_URL);
 
-      setErrorMessage("");
+    console.log(
+      "SUPABASE KEY 있음:",
+      !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    );
 
-      if (!formData.email || !formData.password) {
-        setErrorMessage("이메일과 비밀번호를 입력해주세요.");
-        return;
-      }
+    setErrorMessage("");
 
-      if (formData.password !== formData.passwordConfirm) {
-        setErrorMessage("비밀번호가 일치하지 않습니다.");
-        return;
-      }
+    if (!formData.email || !formData.password) {
+      setErrorMessage("이메일과 비밀번호를 입력해주세요.");
+      return;
+    }
 
-      setIsSubmitting(true);
+    if (formData.password !== formData.passwordConfirm) {
+      setErrorMessage("비밀번호가 일치하지 않습니다.");
+      return;
+    }
 
-      console.log("회원가입 시작:", formData);
+    setIsSubmitting(true);
 
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+    console.log("회원가입 시작:", formData);
+
+    const { data: authData, error: authError } =
+      await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
         options: {
@@ -114,17 +119,20 @@ export default function SignupPage() {
         },
       });
 
-      if (authError) throw authError;
+    if (authError) {
+      throw authError;
+    }
 
-      const userId = authData.user?.id;
+    const userId = authData.user?.id;
 
-      if (!userId) {
-        throw new Error("auth user id가 생성되지 않았습니다.");
-      }
+    if (!userId) {
+      throw new Error("auth user id가 생성되지 않았습니다.");
+    }
 
-      console.log("Auth 생성 완료:", userId);
+    console.log("Auth 생성 완료:", userId);
 
-      const { data: companyData, error: companyError } = await supabase
+    const { data: companyData, error: companyError } =
+      await supabase
         .from("companies")
         .insert({
           company_name: formData.companyName,
@@ -135,27 +143,139 @@ export default function SignupPage() {
         .select("id")
         .single();
 
-      if (companyError) {
-        console.error("companies insert 실패:", companyError);
-        throw companyError;
-      }
-
-      console.log("companies 생성 완료:", companyData);
-
-      setStep(4);
-    } catch (error: unknown) {
-      console.error("회원가입 실패 전체:", error);
-
-      if (typeof error === "object" && error !== null) {
-        console.error("회원가입 실패 상세:", JSON.stringify(error, null, 2));
-        setErrorMessage(JSON.stringify(error, null, 2));
-      } else {
-        setErrorMessage(String(error));
-      }
-    } finally {
-      setIsSubmitting(false);
+    if (companyError) {
+      console.error("companies insert 실패:", companyError);
+      throw companyError;
     }
-  };
+
+    console.log("companies 생성 완료:", companyData);
+
+    const { error: userInsertError } = await supabase
+      .from("users")
+      .insert({
+        id: userId,
+        company_id: companyData.id,
+        role: signupType,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        status: "pending",
+        is_active: true,
+      });
+
+    if (userInsertError) {
+      console.error("users insert 실패:", userInsertError);
+      throw userInsertError;
+    }
+
+    console.log("users 생성 완료");
+
+    if (signupType === "customer") {
+const { error: customerProfileError } =
+  await supabase
+    .from("customer_profiles")
+    .insert({
+      company_id: companyData.id,
+      main_order_items: formData.mainOrderItems,
+      manufacturing_categories: formData.manufacturingFields,
+      monthly_order_volume: formData.expectedMonthlyOrder,
+      interested_services: formData.interestedServices.join(", "),
+    });
+
+      if (customerProfileError) {
+        console.error(
+          "customer_profiles insert 실패:",
+          customerProfileError
+        );
+
+        throw customerProfileError;
+      }
+
+      console.log("customer_profiles 생성 완료");
+    }
+
+    if (signupType === "partner") {
+      const { error: partnerProfileError } =
+        await supabase
+          .from("partner_profiles")
+          .insert({
+            company_id: companyData.id,
+            service_regions:
+              formData.availableRegions,
+            quality_certifications:
+              formData.qualityCertifications.join(", "),
+            company_intro: formData.companyIntro,
+            main_products: formData.mainProducts,
+            production_equipment:
+              formData.equipment,
+            quality_equipment:
+              formData.qualityEquipment,
+          });
+
+      if (partnerProfileError) {
+        console.error(
+          "partner_profiles insert 실패:",
+          partnerProfileError
+        );
+
+        throw partnerProfileError;
+      }
+
+      console.log("partner_profiles 생성 완료");
+    }
+
+    const { error: signupRequestError } =
+      await supabase
+        .from("signup_requests")
+        .insert({
+          user_id: userId,
+          company_id: companyData.id,
+          signup_type: signupType,
+          company_name: formData.companyName,
+          business_number:
+            formData.businessNumber,
+          contact_name: formData.name,
+          contact_email: formData.email,
+          contact_phone: formData.phone,
+          region: formData.region,
+          industry: formData.industry,
+          status: "pending",
+        });
+
+    if (signupRequestError) {
+      console.error(
+        "signup_requests insert 실패:",
+        signupRequestError
+      );
+
+      throw signupRequestError;
+    }
+
+    console.log("signup_requests 생성 완료");
+
+    setStep(4);
+  } catch (error: unknown) {
+    console.error("회원가입 실패 전체:", error);
+
+    if (
+      typeof error === "object" &&
+      error !== null
+    ) {
+      console.error(
+        "회원가입 실패 상세:",
+        JSON.stringify(error, null, 2)
+      );
+
+      setErrorMessage(
+        JSON.stringify(error, null, 2)
+      );
+    } else {
+      setErrorMessage(String(error));
+    }
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   return (
     <main className="min-h-screen bg-white text-slate-950">
