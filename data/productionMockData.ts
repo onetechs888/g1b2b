@@ -1,0 +1,48 @@
+export const productionSummary = {
+  waiting: 12,
+  processing: 8,
+  postProcess: 5,
+  inspection: 3,
+};
+
+export const bomItems = [
+  {
+    id: "BOM-001",
+    project_id: "PO-01",
+    bom_item_id: "BOM-001",
+    project_name: "Chamber",
+    item_name: "Main Chamber",
+    drawing_no: "DWG-001",
+    quantity: 2,
+    revision: "REV-A",
+    current_process: "가공중",
+    status: "진행중",
+    action: "공정변경",
+  },
+  {
+    id: "BOM-002",
+    project_id: "PO-01",
+    bom_item_id: "BOM-002",
+    project_name: "Chamber",
+    item_name: "Upper Plate",
+    drawing_no: "DWG-002",
+    quantity: 4,
+    revision: "REV-A",
+    current_process: "후공정",
+    status: "진행중",
+    action: "공정변경",
+  },
+  {
+    id: "BOM-003",
+    project_id: "PO-01",
+    bom_item_id: "BOM-003",
+    project_name: "Chamber",
+    item_name: "Cooling Block",
+    drawing_no: "DWG-003",
+    quantity: 6,
+    revision: "REV-A",
+    current_process: "검사대기",
+    status: "주의",
+    action: "공정변경",
+  },
+];

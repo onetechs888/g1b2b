@@ -1,0 +1,45 @@
+export const shipmentSummary = {
+  scheduled: 4,
+  preparing: 3,
+  shipped: 12,
+  delayed: 1,
+};
+
+export const shipments = [
+  {
+    id: "SHIP-001",
+    shipment_id: "SHIP-001",
+    project_id: "PO-01",
+    bom_item_id: "BOM-001",
+    project_name: "Chamber",
+    item_name: "Main Chamber",
+    quantity: 2,
+    planned_ship_date: "2026-06-20",
+    shipment_status: "출하준비",
+    status: "진행중",
+  },
+  {
+    id: "SHIP-002",
+    shipment_id: "SHIP-002",
+    project_id: "PO-02",
+    bom_item_id: "BOM-011",
+    project_name: "Valve Module",
+    item_name: "Valve Body",
+    quantity: 4,
+    planned_ship_date: "2026-06-18",
+    shipment_status: "출하완료",
+    status: "완료",
+  },
+  {
+    id: "SHIP-003",
+    shipment_id: "SHIP-003",
+    project_id: "PO-03",
+    bom_item_id: "BOM-021",
+    project_name: "Frame Assembly",
+    item_name: "Base Frame",
+    quantity: 1,
+    planned_ship_date: "2026-06-22",
+    shipment_status: "지연위험",
+    status: "주의",
+  },
+];

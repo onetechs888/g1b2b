@@ -1,0 +1,48 @@
+export const documentSummary = {
+  total: 24,
+  drawings: 8,
+  reports: 6,
+  pendingDownload: 3,
+};
+
+export const documents = [
+  {
+    id: "DOC-001",
+    document_id: "DOC-001",
+    project_id: "PO-01",
+    bom_item_id: "BOM-001",
+    project_name: "Chamber",
+    item_name: "Main Chamber",
+    file_name: "Main Chamber Drawing",
+    file_type: "DWG",
+    revision: "REV-A",
+    download_status: "승인대기",
+    status: "대기",
+  },
+  {
+    id: "DOC-002",
+    document_id: "DOC-002",
+    project_id: "PO-01",
+    bom_item_id: "BOM-002",
+    project_name: "Chamber",
+    item_name: "Upper Plate",
+    file_name: "Upper Plate PDF",
+    file_type: "PDF",
+    revision: "REV-A",
+    download_status: "다운로드 가능",
+    status: "진행중",
+  },
+  {
+    id: "DOC-003",
+    document_id: "DOC-003",
+    project_id: "PO-02",
+    bom_item_id: "BOM-011",
+    project_name: "Valve Module",
+    item_name: "Valve Body",
+    file_name: "Valve Body STEP",
+    file_type: "STEP",
+    revision: "REV-A",
+    download_status: "제한",
+    status: "주의",
+  },
+];
