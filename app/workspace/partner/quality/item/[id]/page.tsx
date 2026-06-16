@@ -9,6 +9,14 @@ import KpiCard from "@/components/workspace/KpiCard";
 import RightDetailPanel from "@/components/workspace/RightDetailPanel";
 import { supabase } from "@/lib/supabase";
 
+const qcStatusOptions = [
+  { label: "검수대기", value: "scheduled" },
+  { label: "검수중", value: "inspecting" },
+  { label: "승인", value: "passed" },
+  { label: "NCR", value: "failed" },
+  { label: "보류", value: "hold" },
+];
+
 function getQcStatusLabel(status: string) {
   if (status === "requested") return "검사요청";
   if (status === "scheduled") return "검수대기";
@@ -16,7 +24,7 @@ function getQcStatusLabel(status: string) {
   if (status === "passed") return "승인";
   if (status === "failed") return "NCR";
   if (status === "hold") return "보류";
-  return status;
+  return status || "-";
 }
 
 export default function QualityItemPage() {
@@ -24,6 +32,7 @@ export default function QualityItemPage() {
 
   const [requestId, setRequestId] = useState("");
   const [currentStatus, setCurrentStatus] = useState("-");
+  const [nextStatus, setNextStatus] = useState("scheduled");
   const [memo, setMemo] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -44,38 +53,165 @@ export default function QualityItemPage() {
         .single();
 
       if (error || !data) {
-        console.error(error);
+        console.error("QC 조회 실패:", error);
         return;
       }
 
       setCurrentStatus(data.qc_status);
+      setNextStatus(data.qc_status);
     };
 
     fetchCurrentQc();
   }, [requestId]);
 
-  const saveWorkflowAndActivity = async ({
-    currentQc,
-    previousStatus,
-    nextStatus,
-    action,
-    saveMemo,
-    ncrId,
-  }: {
-    currentQc: any;
-    previousStatus: string;
-    nextStatus: string;
-    action: string;
-    saveMemo: string;
-    ncrId?: string | null;
-  }) => {
+  const handleSave = async () => {
+    if (!requestId) {
+      alert("QC 요청 ID를 찾지 못했습니다.");
+      return;
+    }
+
+    setSaving(true);
+
+    const normalizedNextStatus = nextStatus.trim().toLowerCase();
+
+    const { data: currentQc, error: qcError } = await supabase
+      .from("qc_requests")
+      .select("*")
+      .eq("id", requestId)
+      .single();
+
+    if (qcError || !currentQc) {
+      alert("QC 정보를 찾지 못했습니다.");
+      console.error("QC 조회 실패:", qcError);
+      setSaving(false);
+      return;
+    }
+
+    const { data: bomItem, error: bomError } = await supabase
+      .from("bom_items")
+      .select("id, project_id, part_number, part_name, quantity")
+      .eq("id", currentQc.bom_item_id)
+      .single();
+
+    if (bomError || !bomItem) {
+      alert("BOM 정보를 찾지 못했습니다.");
+      console.error("BOM 조회 실패:", bomError);
+      setSaving(false);
+      return;
+    }
+
+    const previousStatus = currentQc.qc_status;
+    const saveMemo = memo || "QC 상태 변경";
+
+    const { error: updateError } = await supabase
+      .from("qc_requests")
+      .update({
+        qc_status: normalizedNextStatus,
+        memo: saveMemo,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId);
+
+    if (updateError) {
+      alert("QC 상태 저장 실패");
+      console.error("QC UPDATE 실패:", updateError);
+      setSaving(false);
+      return;
+    }
+
+    let shipmentId: string | null = null;
+    let ncrReportId: string | null = null;
+
+    if (normalizedNextStatus === "passed") {
+      const { data: existingShipment, error: existingShipmentError } =
+        await supabase
+          .from("shipments")
+          .select("id")
+          .eq("bom_item_id", bomItem.id)
+          .maybeSingle();
+
+      if (existingShipmentError) {
+        alert("기존 출하 데이터 조회에 실패했습니다.");
+        console.error("SHIPMENT 조회 실패:", existingShipmentError);
+        setSaving(false);
+        return;
+      }
+
+      if (existingShipment?.id) {
+        shipmentId = existingShipment.id;
+      } else {
+        const { data: shipment, error: shipmentError } = await supabase
+          .from("shipments")
+          .insert({
+            bom_item_id: bomItem.id,
+            shipment_type: "full",
+            shipped_quantity: bomItem.quantity ?? 1,
+            tracking_number: null,
+            shipment_status: "ready",
+            shipment_date: new Date().toISOString().slice(0, 10),
+            created_by: null,
+          })
+          .select("id")
+          .single();
+
+        if (shipmentError || !shipment) {
+          alert("QC 승인은 저장됐지만 출하관리 자동 생성에 실패했습니다.");
+          console.error("SHIPMENT INSERT 실패:", shipmentError);
+          setSaving(false);
+          return;
+        }
+
+        shipmentId = shipment.id;
+      }
+    }
+
+    if (normalizedNextStatus === "failed") {
+      const { data: existingNcr, error: existingNcrError } = await supabase
+        .from("ncr_reports")
+        .select("id")
+        .eq("qc_request_id", currentQc.id)
+        .maybeSingle();
+
+      if (existingNcrError) {
+        alert("기존 NCR 데이터 조회에 실패했습니다.");
+        console.error("NCR 조회 실패:", existingNcrError);
+        setSaving(false);
+        return;
+      }
+
+      if (existingNcr?.id) {
+        ncrReportId = existingNcr.id;
+      } else {
+        const { data: ncrReport, error: ncrError } = await supabase
+          .from("ncr_reports")
+          .insert({
+            bom_item_id: bomItem.id,
+            qc_request_id: currentQc.id,
+            title: `${bomItem.part_name} 품질 부적합`,
+            description: saveMemo,
+            status: "registered",
+          })
+          .select("id")
+          .single();
+
+        if (ncrError || !ncrReport) {
+          alert("QC 상태는 NCR로 저장됐지만 NCR 리포트 생성에 실패했습니다.");
+          console.error("NCR INSERT 실패:", ncrError);
+          setSaving(false);
+          return;
+        }
+
+        ncrReportId = ncrReport.id;
+      }
+    }
+
     const { error: historyError } = await supabase
       .from("workflow_status_histories")
       .insert({
-        bom_item_id: currentQc.bom_item_id,
+        bom_item_id: bomItem.id,
         workflow_type: "qc",
         from_status: previousStatus,
-        to_status: nextStatus,
+        to_status: normalizedNextStatus,
         changed_by: null,
         changed_at: new Date().toISOString(),
         source_table: "qc_requests",
@@ -84,7 +220,10 @@ export default function QualityItemPage() {
       });
 
     if (historyError) {
-      throw historyError;
+      alert("QC 상태는 저장됐지만 상태 이력 저장에 실패했습니다.");
+      console.error("WORKFLOW INSERT 실패:", historyError);
+      setSaving(false);
+      return;
     }
 
     const { error: activityError } = await supabase
@@ -92,169 +231,42 @@ export default function QualityItemPage() {
       .insert({
         user_id: null,
         company_id: null,
-        project_id: null,
-        bom_item_id: currentQc.bom_item_id,
-
+        project_id: bomItem.project_id,
+        bom_item_id: bomItem.id,
         target_type: "qc_request",
         target_id: currentQc.id,
-
-        action,
-
+        action:
+          normalizedNextStatus === "passed"
+            ? "qc_approved_shipment_created"
+            : normalizedNextStatus === "failed"
+              ? "qc_ncr_created"
+              : "qc_status_change",
         before_value: {
           qc_status: previousStatus,
         },
-
         after_value: {
-          qc_status: nextStatus,
-          ncr_report_id: ncrId ?? null,
+          qc_status: normalizedNextStatus,
+          shipment_id: shipmentId,
+          ncr_report_id: ncrReportId,
         },
-
         memo: saveMemo,
       });
 
     if (activityError) {
-      throw activityError;
-    }
-  };
-
-  const handleApprove = async () => {
-    if (!requestId) {
-      alert("QC 요청 ID를 찾지 못했습니다.");
-      return;
-    }
-
-    setSaving(true);
-
-    const { data: currentQc, error: currentQcError } = await supabase
-      .from("qc_requests")
-      .select("*")
-      .eq("id", requestId)
-      .single();
-
-    if (currentQcError || !currentQc) {
-      alert("QC 정보를 찾지 못했습니다.");
-      console.error(currentQcError);
+      alert("QC 상태와 이력은 저장됐지만 Activity Log 저장에 실패했습니다.");
+      console.error("ACTIVITY INSERT 실패:", activityError);
       setSaving(false);
       return;
     }
 
-    const previousStatus = currentQc.qc_status;
-    const nextStatus = "passed";
-    const saveMemo = memo || "검사 승인";
+    alert(
+      normalizedNextStatus === "passed"
+        ? "QC 승인 완료. 출하관리로 자동 이관되었습니다."
+        : normalizedNextStatus === "failed"
+          ? "NCR이 등록되었습니다."
+          : "QC 상태가 저장되었습니다."
+    );
 
-    const { error: updateError } = await supabase
-      .from("qc_requests")
-      .update({
-        qc_status: nextStatus,
-        memo: saveMemo,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", requestId);
-
-    if (updateError) {
-      alert("검사 승인 저장 실패");
-      console.error(updateError);
-      setSaving(false);
-      return;
-    }
-
-    try {
-      await saveWorkflowAndActivity({
-        currentQc,
-        previousStatus,
-        nextStatus,
-        action: "qc_approved",
-        saveMemo,
-      });
-    } catch (error) {
-      alert("검사 승인은 저장됐지만 이력 저장에 실패했습니다.");
-      console.error(error);
-      setSaving(false);
-      return;
-    }
-
-    alert("검사 승인 처리되었습니다.");
-    router.push("/workspace/partner/quality");
-    router.refresh();
-  };
-
-  const handleCreateNcr = async () => {
-    if (!requestId) {
-      alert("QC 요청 ID를 찾지 못했습니다.");
-      return;
-    }
-
-    setSaving(true);
-
-    const { data: currentQc, error: currentQcError } = await supabase
-      .from("qc_requests")
-      .select("*")
-      .eq("id", requestId)
-      .single();
-
-    if (currentQcError || !currentQc) {
-      alert("QC 정보를 찾지 못했습니다.");
-      console.error(currentQcError);
-      setSaving(false);
-      return;
-    }
-
-    const previousStatus = currentQc.qc_status;
-    const nextStatus = "failed";
-    const saveMemo = memo || "NCR 등록";
-
-    const { error: updateError } = await supabase
-      .from("qc_requests")
-      .update({
-        qc_status: nextStatus,
-        memo: saveMemo,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", requestId);
-
-    if (updateError) {
-      alert("QC NCR 상태 저장 실패");
-      console.error(updateError);
-      setSaving(false);
-      return;
-    }
-
-    const { data: ncrReport, error: ncrError } = await supabase
-      .from("ncr_reports")
-      .insert({
-        bom_item_id: currentQc.bom_item_id,
-        qc_request_id: currentQc.id,
-        title: "품질 부적합 등록",
-        description: saveMemo,
-        status: "registered",
-      })
-      .select("id")
-      .single();
-
-    if (ncrError || !ncrReport) {
-      alert("QC 상태는 NCR로 저장됐지만 NCR 리포트 생성에 실패했습니다.");
-      console.error(ncrError);
-      setSaving(false);
-      return;
-    }
-
-    try {
-      await saveWorkflowAndActivity({
-        currentQc,
-        previousStatus,
-        nextStatus,
-        action: "qc_ncr_created",
-        saveMemo,
-        ncrId: ncrReport.id,
-      });
-    } catch (error) {
-      alert("NCR은 생성됐지만 이력 저장에 실패했습니다.");
-      console.error(error);
-      setSaving(false);
-      return;
-    }
-
-    alert("NCR이 등록되었습니다.");
     router.push("/workspace/partner/quality");
     router.refresh();
   };
@@ -264,7 +276,7 @@ export default function QualityItemPage() {
       <div className="space-y-6">
         <PageHeader
           title="검사관리"
-          description="검사 승인 또는 NCR 등록을 처리합니다."
+          description="검수 상태를 변경하고 승인 시 출하관리로 자동 이관합니다."
         />
 
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
@@ -276,23 +288,34 @@ export default function QualityItemPage() {
 
         <div className="grid grid-cols-4 gap-4">
           <KpiCard title="현재상태" value={getQcStatusLabel(currentStatus)} />
-          <KpiCard title="가능액션" value="승인 / NCR" />
-          <KpiCard title="Workflow" value="QC" />
-          <KpiCard title="Audit" value="ON" />
+          <KpiCard title="변경상태" value={getQcStatusLabel(nextStatus)} />
+          <KpiCard title="승인 시" value="출하 이관" />
+          <KpiCard title="NCR 시" value="NCR 생성" />
         </div>
 
         <div className="flex items-start gap-4">
           <section className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white p-5">
             <h2 className="text-base font-semibold text-gray-900">
-              검사 처리
+              검사 상태 변경
             </h2>
 
             <div className="mt-4 space-y-4">
-              <div className="rounded-md border border-gray-200 bg-gray-50 p-4">
-                <div className="text-xs text-gray-500">현재 검사상태</div>
-                <div className="mt-1 text-lg font-semibold text-gray-900">
-                  {getQcStatusLabel(currentStatus)}
-                </div>
+              <div>
+                <label className="mb-2 block text-xs font-medium text-gray-500">
+                  변경할 검사 상태
+                </label>
+
+                <select
+                  value={nextStatus}
+                  onChange={(event) => setNextStatus(event.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900"
+                >
+                  {qcStatusOptions.map((status) => (
+                    <option key={status.value} value={status.value}>
+                      {status.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -320,20 +343,11 @@ export default function QualityItemPage() {
 
                 <button
                   type="button"
-                  onClick={handleApprove}
+                  onClick={handleSave}
                   disabled={saving}
                   className="h-11 rounded-md bg-black px-6 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  {saving ? "저장중..." : "승인"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCreateNcr}
-                  disabled={saving}
-                  className="h-11 rounded-md border border-red-300 bg-red-50 px-6 text-sm font-semibold text-red-700 disabled:opacity-50"
-                >
-                  {saving ? "저장중..." : "NCR 등록"}
+                  {saving ? "저장중..." : "검사 상태 저장"}
                 </button>
               </div>
             </div>
@@ -345,9 +359,9 @@ export default function QualityItemPage() {
               items={[
                 { label: "QC ID", value: requestId || "-" },
                 { label: "현재상태", value: getQcStatusLabel(currentStatus) },
-                { label: "승인 시", value: "qc_requests → passed" },
-                { label: "NCR 시", value: "ncr_reports 생성" },
-                { label: "공통 이력", value: "workflow + activity" },
+                { label: "승인", value: "shipments 자동 생성" },
+                { label: "출하상태", value: "포장 및 출하준비" },
+                { label: "NCR", value: "ncr_reports 자동 생성" },
               ]}
             />
           </aside>

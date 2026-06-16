@@ -53,7 +53,11 @@ export default async function QualityPage() {
       const bom = bomMap.get(String(request.bom_item_id));
 
       return {
+        // 중요:
+        // DataTable의 link 타입은 row.id를 사용하므로
+        // 반드시 qc_requests.id를 넣어야 함
         id: request.id,
+
         qc_request_id: request.id,
         bom_item_id: bom?.part_number ?? "-",
         item_name: bom?.part_name ?? "-",
