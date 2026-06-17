@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabase";
 function getShipmentStatusLabel(status: string) {
   if (status === "ready") return "포장 및 출하준비";
   if (status === "shipped") return "출하 및 납품완료";
-  return status;
+  return status ?? "-";
 }
 
 export default async function ShipmentPage() {
@@ -21,7 +21,11 @@ export default async function ShipmentPage() {
     .from("bom_items")
     .select("*");
 
-  if (shipmentError || bomError) {
+  const { data: projects, error: projectError } = await supabase
+    .from("projects")
+    .select("id, project_code, project_name, due_date");
+
+  if (shipmentError || bomError || projectError) {
     return (
       <WorkspaceLayout>
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
@@ -29,8 +33,8 @@ export default async function ShipmentPage() {
             출하 데이터를 불러오지 못했습니다.
           </div>
 
-          <pre className="mt-2 text-xs">
-            {JSON.stringify(shipmentError || bomError, null, 2)}
+          <pre className="mt-2 whitespace-pre-wrap text-xs">
+            {JSON.stringify(shipmentError || bomError || projectError, null, 2)}
           </pre>
         </div>
       </WorkspaceLayout>
@@ -40,17 +44,30 @@ export default async function ShipmentPage() {
   const bomMap = new Map();
 
   bomItems?.forEach((item) => {
-    bomMap.set(item.id, item);
+    bomMap.set(String(item.id), item);
+  });
+
+  const projectMap = new Map();
+
+  projects?.forEach((project) => {
+    projectMap.set(String(project.id), project);
   });
 
   const shipmentRows =
     shipmentsData?.map((shipment) => {
-      const bom = bomMap.get(shipment.bom_item_id);
+      const bom = bomMap.get(String(shipment.bom_item_id));
+      const project = bom ? projectMap.get(String(bom.project_id)) : null;
 
       return {
         id: shipment.id,
 
         shipment_id: shipment.id.slice(0, 8),
+
+        project_no: project?.project_code ?? "-",
+
+        project_name: project?.project_name ?? "-",
+
+        due_date: project?.due_date ?? "-",
 
         bom_item_id: bom?.part_number ?? "-",
 
@@ -58,12 +75,9 @@ export default async function ShipmentPage() {
 
         quantity: shipment.shipped_quantity,
 
-        shipment_date:
-          shipment.shipment_date ?? "-",
+        shipment_date: shipment.shipment_date ?? "-",
 
-        shipment_status: getShipmentStatusLabel(
-          shipment.shipment_status
-        ),
+        shipment_status: getShipmentStatusLabel(shipment.shipment_status),
 
         status:
           shipment.shipment_status === "shipped"
@@ -74,14 +88,14 @@ export default async function ShipmentPage() {
       };
     }) ?? [];
 
+  const currentProject = shipmentRows[0];
+
   const readyCount = shipmentRows.filter(
-    (item) =>
-      item.shipment_status === "포장 및 출하준비"
+    (item) => item.shipment_status === "포장 및 출하준비"
   ).length;
 
   const shippedCount = shipmentRows.filter(
-    (item) =>
-      item.shipment_status === "출하 및 납품완료"
+    (item) => item.shipment_status === "출하 및 납품완료"
   ).length;
 
   return (
@@ -91,6 +105,24 @@ export default async function ShipmentPage() {
           title="출하관리"
           description="포장 및 출하준비 / 출하 및 납품완료를 관리합니다."
         />
+
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+          <div className="text-xs text-blue-600">프로젝트 정보</div>
+          <div className="mt-1 text-lg font-semibold text-blue-900">
+            {currentProject?.project_no ?? "-"} /{" "}
+            {currentProject?.project_name ?? "-"}
+          </div>
+          <div className="mt-2 text-sm text-blue-700">
+            납기일: {currentProject?.due_date ?? "-"}
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+          <div className="text-xs text-blue-600">출하관리 Workflow</div>
+          <div className="mt-1 text-lg font-semibold text-blue-900">
+            포장 및 출하준비 → 출하 및 납품완료
+          </div>
+        </div>
 
         <div className="grid grid-cols-2 gap-4">
           <KpiCard
@@ -105,9 +137,17 @@ export default async function ShipmentPage() {
         </div>
 
         <div className="flex gap-4 items-start">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <DataTable
               columns={[
+                {
+                  key: "project_no",
+                  label: "프로젝트번호",
+                },
+                {
+                  key: "project_name",
+                  label: "프로젝트명",
+                },
                 {
                   key: "shipment_id",
                   label: "출하번호",
@@ -154,6 +194,14 @@ export default async function ShipmentPage() {
               title="출하 데이터"
               items={[
                 {
+                  label: "프로젝트번호",
+                  value: currentProject?.project_no ?? "-",
+                },
+                {
+                  label: "프로젝트명",
+                  value: currentProject?.project_name ?? "-",
+                },
+                {
                   label: "총 출하건수",
                   value: shipmentRows.length,
                 },
@@ -167,7 +215,7 @@ export default async function ShipmentPage() {
                 },
                 {
                   label: "데이터 기준",
-                  value: "shipments",
+                  value: "shipments + bom_items",
                 },
               ]}
             />
