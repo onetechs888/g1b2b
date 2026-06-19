@@ -1,9 +1,16 @@
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import PageHeader from "@/components/workspace/PageHeader";
+import ProjectSelector from "@/components/workspace/ProjectSelector";
 import KpiCard from "@/components/workspace/KpiCard";
 import DataTable from "@/components/workspace/DataTable";
 import RightDetailPanel from "@/components/workspace/RightDetailPanel";
 import { supabase } from "@/lib/supabase";
+
+type QualityPageProps = {
+  searchParams?: Promise<{
+    project?: string;
+  }>;
+};
 
 function getQcStatusLabel(status: string) {
   if (status === "requested") return "검사요청";
@@ -15,22 +22,49 @@ function getQcStatusLabel(status: string) {
   return status ?? "-";
 }
 
-export default async function QualityPage() {
-  const { data: qcRequests, error: qcError } = await supabase
-    .from("qc_requests")
-    .select("*")
-    .order("updated_at", { ascending: false });
+export default async function QualityPage({ searchParams }: QualityPageProps) {
+  const params = await searchParams;
+  const selectedProjectCode = params?.project;
+
+  const { data: projects, error: projectError } = await supabase
+    .from("projects")
+    .select("id, project_code, project_name, due_date")
+    .order("project_code", { ascending: true });
+
+  if (projectError) {
+    return (
+      <WorkspaceLayout>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <div className="font-semibold">프로젝트 데이터를 불러오지 못했습니다.</div>
+          <pre className="mt-2 whitespace-pre-wrap text-xs">
+            {JSON.stringify(projectError, null, 2)}
+          </pre>
+        </div>
+      </WorkspaceLayout>
+    );
+  }
+
+  const selectedProject = selectedProjectCode
+    ? projects?.find((project) => project.project_code === selectedProjectCode)
+    : projects?.[0];
 
   const { data: bomItems, error: bomError } = await supabase
     .from("bom_items")
     .select("id, project_id, part_number, part_name")
+    .eq("project_id", selectedProject?.id ?? "")
     .order("part_number", { ascending: true });
 
-  const { data: projects, error: projectError } = await supabase
-    .from("projects")
-    .select("id, project_code, project_name, customer_company_id, due_date");
+  const bomIds = bomItems?.map((item) => item.id) ?? [];
 
-  if (qcError || bomError || projectError) {
+  const { data: qcRequests, error: qcError } = bomIds.length
+    ? await supabase
+        .from("qc_requests")
+        .select("*")
+        .in("bom_item_id", bomIds)
+        .order("updated_at", { ascending: false })
+    : { data: [], error: null };
+
+  if (qcError || bomError) {
     return (
       <WorkspaceLayout>
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
@@ -39,18 +73,12 @@ export default async function QualityPage() {
           </div>
 
           <pre className="mt-2 whitespace-pre-wrap text-xs">
-            {JSON.stringify(qcError || bomError || projectError, null, 2)}
+            {JSON.stringify(qcError || bomError, null, 2)}
           </pre>
         </div>
       </WorkspaceLayout>
     );
   }
-
-  const projectMap = new Map();
-
-  projects?.forEach((project) => {
-    projectMap.set(String(project.id), project);
-  });
 
   const bomMap = new Map();
 
@@ -61,15 +89,13 @@ export default async function QualityPage() {
   const qcRows =
     qcRequests?.map((request) => {
       const bom = bomMap.get(String(request.bom_item_id));
-      const project = bom ? projectMap.get(String(bom.project_id)) : null;
 
       return {
         id: request.id,
         qc_request_id: request.id,
-        project_no: project?.project_code ?? "-",
-        project_name: project?.project_name ?? "-",
-        customer_company: "-",
-        due_date: project?.due_date ?? "-",
+        project_no: selectedProject?.project_code ?? "-",
+        project_name: selectedProject?.project_name ?? "-",
+        due_date: selectedProject?.due_date ?? "-",
         bom_item_id: bom?.part_number ?? "-",
         item_name: bom?.part_name ?? "-",
         inspection_date: request.inspection_date ?? "-",
@@ -79,8 +105,6 @@ export default async function QualityPage() {
         action: "검사관리",
       };
     }) ?? [];
-
-  const currentProject = qcRows[0];
 
   const requestedCount = qcRows.filter(
     (item) => item.qc_status_label === "검사요청"
@@ -107,18 +131,26 @@ export default async function QualityPage() {
       <div className="space-y-6">
         <PageHeader
           title="품질관리"
-          description="검수 요청, 검수 진행, 승인 및 NCR을 관리합니다."
+          description="선택된 프로젝트 기준으로 검수 요청, 승인 및 NCR을 관리합니다."
+        />
+
+        <ProjectSelector
+          projects={
+            projects?.map((project) => ({
+              id: project.project_code,
+              name: `${project.project_code} / ${project.project_name}`,
+            })) ?? []
+          }
         />
 
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
           <div className="text-xs text-blue-600">프로젝트 정보</div>
           <div className="mt-1 text-lg font-semibold text-blue-900">
-            {currentProject?.project_no ?? "-"} /{" "}
-            {currentProject?.project_name ?? "-"}
+            {selectedProject?.project_code ?? "-"} /{" "}
+            {selectedProject?.project_name ?? "-"}
           </div>
           <div className="mt-2 text-sm text-blue-700">
-            고객사: {currentProject?.customer_company ?? "-"} · 납기일:{" "}
-            {currentProject?.due_date ?? "-"}
+            납기일: {selectedProject?.due_date ?? "-"}
           </div>
         </div>
 
@@ -165,13 +197,30 @@ export default async function QualityPage() {
             <RightDetailPanel
               title="품질 데이터"
               items={[
-                { label: "프로젝트번호", value: currentProject?.project_no ?? "-" },
-                { label: "프로젝트명", value: currentProject?.project_name ?? "-" },
-                { label: "고객사", value: currentProject?.customer_company ?? "-" },
-                { label: "총 검사", value: qcRows.length },
-                { label: "검수중", value: inspectingCount },
-                { label: "승인", value: passedCount },
-                { label: "NCR", value: ncrCount },
+                {
+                  label: "프로젝트번호",
+                  value: selectedProject?.project_code ?? "-",
+                },
+                {
+                  label: "프로젝트명",
+                  value: selectedProject?.project_name ?? "-",
+                },
+                {
+                  label: "총 검사",
+                  value: qcRows.length,
+                },
+                {
+                  label: "검수중",
+                  value: inspectingCount,
+                },
+                {
+                  label: "승인",
+                  value: passedCount,
+                },
+                {
+                  label: "NCR",
+                  value: ncrCount,
+                },
               ]}
             />
           </div>

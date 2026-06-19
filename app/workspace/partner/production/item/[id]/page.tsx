@@ -1,15 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-
+import { useParams, useRouter } from "next/navigation";
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import PageHeader from "@/components/workspace/PageHeader";
-import KpiCard from "@/components/workspace/KpiCard";
-import RightDetailPanel from "@/components/workspace/RightDetailPanel";
 import { supabase } from "@/lib/supabase";
 
-const processOptions = [
+const PROCESS_STEPS = [
   "대기",
   "소재입고",
   "소재검수",
@@ -18,326 +15,249 @@ const processOptions = [
   "검수요청",
 ];
 
-function getProgressByProcess(process: string) {
-  if (process === "대기") return 0;
-  if (process === "소재입고") return 15;
-  if (process === "소재검수") return 30;
-  if (process === "내부공정") return 60;
-  if (process === "외부공정") return 80;
-  if (process === "검수요청") return 90;
-  return 0;
-}
-
-function getStatusByProcess(process: string) {
-  if (process === "대기") return "not_started";
-  if (process === "검수요청") return "completed";
-  return "in_progress";
-}
-
 export default function ProductionItemPage() {
+  const params = useParams();
   const router = useRouter();
 
-  const [itemId, setItemId] = useState("");
-  const [currentProcess, setCurrentProcess] = useState("-");
-  const [nextProcess, setNextProcess] = useState("소재입고");
-  const [memo, setMemo] = useState("");
+  const itemId = String(params.id);
+
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    const path = window.location.pathname;
-    const value = path.split("/").pop() ?? "";
-    setItemId(decodeURIComponent(value));
-  }, []);
+  const [bomItem, setBomItem] = useState<any>(null);
+  const [currentProcess, setCurrentProcess] = useState("대기");
+  const [memo, setMemo] = useState("");
 
   useEffect(() => {
-    if (!itemId) return;
+    async function fetchCurrentProduction() {
+      setLoading(true);
 
-    const fetchCurrentProduction = async () => {
-      const { data: bomItem, error: bomError } = await supabase
+      const { data: bom, error: bomError } = await supabase
         .from("bom_items")
-        .select("id, part_number")
-        .eq("part_number", itemId)
+        .select("id, project_id, part_number, part_name, process_type")
+        .eq("id", itemId)
         .single();
 
-      if (bomError || !bomItem) {
-        console.error(bomError);
+      if (bomError || !bom) {
+        console.error("BOM 조회 실패:", bomError);
+        setLoading(false);
         return;
       }
+
+      setBomItem(bom);
 
       const { data: productionUpdate, error: productionError } = await supabase
         .from("production_updates")
         .select("*")
-        .eq("bom_item_id", bomItem.id)
-        .single();
+        .eq("bom_item_id", bom.id)
+        .maybeSingle();
 
-      if (productionError || !productionUpdate) {
-        console.error(productionError);
-        return;
+      if (productionError) {
+        console.error("생산상태 조회 실패:", productionError);
       }
 
-      setCurrentProcess(productionUpdate.process_step ?? "대기");
-      setNextProcess(productionUpdate.process_step ?? "소재입고");
-    };
+      setCurrentProcess(
+        productionUpdate?.process_step ?? bom.process_type ?? "대기"
+      );
 
-    fetchCurrentProduction();
+      setLoading(false);
+    }
+
+    if (itemId) {
+      fetchCurrentProduction();
+    }
   }, [itemId]);
 
-  const handleSave = async () => {
-    if (!itemId) {
-      alert("품목번호를 찾지 못했습니다.");
-      return;
-    }
+  async function handleSave() {
+    if (!bomItem) return;
 
     setSaving(true);
 
-    const { data: bomItem, error: bomError } = await supabase
-      .from("bom_items")
-      .select("id, project_id, part_number")
-      .eq("part_number", itemId)
-      .single();
+    const progress =
+      currentProcess === "대기"
+        ? 0
+        : currentProcess === "소재입고"
+          ? 15
+          : currentProcess === "소재검수"
+            ? 30
+            : currentProcess === "내부공정"
+              ? 55
+              : currentProcess === "외부공정"
+                ? 75
+                : currentProcess === "검수요청"
+                  ? 100
+                  : 0;
 
-    if (bomError || !bomItem) {
-      alert("BOM 품목을 찾지 못했습니다.");
-      console.error(bomError);
-      setSaving(false);
-      return;
-    }
+    const productionStatus =
+      currentProcess === "검수요청" ? "completed" : "in_progress";
 
-    const { data: currentUpdate, error: currentUpdateError } = await supabase
+    const { data: existingUpdate } = await supabase
       .from("production_updates")
-      .select("*")
+      .select("id, process_step")
       .eq("bom_item_id", bomItem.id)
-      .single();
+      .maybeSingle();
 
-    if (currentUpdateError || !currentUpdate) {
-      alert("현재 생산 업데이트 정보를 찾지 못했습니다.");
-      console.error(currentUpdateError);
-      setSaving(false);
-      return;
+    const previousProcess =
+      existingUpdate?.process_step ?? bomItem.process_type ?? "대기";
+
+    if (existingUpdate?.id) {
+      await supabase
+        .from("production_updates")
+        .update({
+          process_step: currentProcess,
+          progress,
+          status: productionStatus,
+          memo,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingUpdate.id);
+    } else {
+      await supabase.from("production_updates").insert({
+        bom_item_id: bomItem.id,
+        process_step: currentProcess,
+        progress,
+        status: productionStatus,
+        memo,
+      });
     }
 
-    const previousProcess = currentUpdate.process_step ?? "대기";
-    const nextProgress = getProgressByProcess(nextProcess);
-    const nextStatus = getStatusByProcess(nextProcess);
-    const saveMemo = memo || "생산 상태 변경";
-
-    const { error: updateError } = await supabase
-      .from("production_updates")
+    await supabase
+      .from("bom_items")
       .update({
-        process_step: nextProcess,
-        progress: nextProgress,
-        status: nextStatus,
-        memo: saveMemo,
-        updated_at: new Date().toISOString(),
+        process_type: currentProcess,
       })
-      .eq("bom_item_id", bomItem.id);
+      .eq("id", bomItem.id);
 
-    if (updateError) {
-      alert("생산 상태 저장에 실패했습니다.");
-      console.error(updateError);
-      setSaving(false);
-      return;
-    }
+    await supabase.from("workflow_status_histories").insert({
+      bom_item_id: bomItem.id,
+      workflow_type: "production",
+      from_status: previousProcess,
+      to_status: currentProcess,
+      memo,
+      changed_at: new Date().toISOString(),
+    });
 
-    let qcRequestId: string | null = null;
+    await supabase.from("activity_logs").insert({
+      project_id: bomItem.project_id,
+      bom_item_id: bomItem.id,
+      target_type: "production",
+      action: "production_process_change",
+      memo: memo || `${previousProcess} → ${currentProcess}`,
+      created_at: new Date().toISOString(),
+    });
 
-    if (nextProcess === "검수요청") {
+    if (currentProcess === "검수요청") {
       const { data: existingQc } = await supabase
         .from("qc_requests")
         .select("id")
         .eq("bom_item_id", bomItem.id)
         .maybeSingle();
 
-      if (existingQc?.id) {
-        qcRequestId = existingQc.id;
-      } else {
-        const { data: qcRequest, error: qcError } = await supabase
-          .from("qc_requests")
-          .insert({
-            bom_item_id: bomItem.id,
-            qc_status: "scheduled",
-            inspection_date: new Date().toISOString().slice(0, 10),
-            priority: false,
-            memo: "생산관리 검수요청 자동 생성",
-          })
-          .select("id")
-          .single();
+      if (!existingQc) {
+        await supabase.from("qc_requests").insert({
+          bom_item_id: bomItem.id,
+          qc_status: "requested",
+          priority: false,
+          memo: "생산관리에서 검수요청 자동 생성",
+        });
 
-        if (qcError || !qcRequest) {
-          alert("생산 상태는 저장됐지만 QC 요청 생성에 실패했습니다.");
-          console.error(qcError);
-          setSaving(false);
-          return;
-        }
-
-        qcRequestId = qcRequest.id;
+        await supabase.from("activity_logs").insert({
+          project_id: bomItem.project_id,
+          bom_item_id: bomItem.id,
+          target_type: "qc",
+          action: "production_qc_requested",
+          memo: "생산관리 검수요청으로 QC 요청 자동 생성",
+          created_at: new Date().toISOString(),
+        });
       }
     }
 
-    const { error: historyError } = await supabase
-      .from("workflow_status_histories")
-      .insert({
-        bom_item_id: bomItem.id,
-        workflow_type: "production",
-        from_status: previousProcess,
-        to_status: nextProcess,
-        changed_by: null,
-        changed_at: new Date().toISOString(),
-        source_table: "production_updates",
-        source_id: currentUpdate.id,
-        memo: saveMemo,
-      });
+    setSaving(false);
+    router.push(`/workspace/partner/production`);
+  }
 
-    if (historyError) {
-      alert("생산 상태는 저장됐지만 상태 이력 저장에 실패했습니다.");
-      console.error(historyError);
-      setSaving(false);
-      return;
-    }
-
-    const { error: activityError } = await supabase
-      .from("activity_logs")
-      .insert({
-        user_id: null,
-        company_id: null,
-        project_id: bomItem.project_id,
-        bom_item_id: bomItem.id,
-
-        target_type: "production_update",
-        target_id: currentUpdate.id,
-
-        action:
-          nextProcess === "검수요청"
-            ? "production_qc_requested"
-            : "production_process_change",
-
-        before_value: {
-          process_step: previousProcess,
-          progress: currentUpdate.progress,
-          status: currentUpdate.status,
-        },
-
-        after_value: {
-          process_step: nextProcess,
-          progress: nextProgress,
-          status: nextStatus,
-          qc_request_id: qcRequestId,
-        },
-
-        memo: saveMemo,
-      });
-
-    if (activityError) {
-      alert("생산 상태와 이력은 저장됐지만 Activity Log 저장에 실패했습니다.");
-      console.error(activityError);
-      setSaving(false);
-      return;
-    }
-
-    alert(
-      nextProcess === "검수요청"
-        ? "검수요청이 저장되었고 품질관리로 자동 이관되었습니다."
-        : "생산 상태가 저장되었습니다."
+  if (loading) {
+    return (
+      <WorkspaceLayout>
+        <div className="p-6 text-sm text-gray-500">생산 정보를 불러오는 중...</div>
+      </WorkspaceLayout>
     );
+  }
 
-    router.push("/workspace/partner/production");
-    router.refresh();
-  };
+  if (!bomItem) {
+    return (
+      <WorkspaceLayout>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          생산 품목을 찾지 못했습니다.
+        </div>
+      </WorkspaceLayout>
+    );
+  }
 
   return (
     <WorkspaceLayout>
       <div className="space-y-6">
         <PageHeader
-          title="생산 상태 변경"
-          description="BOM 품목의 생산 Workflow 상태를 변경합니다."
+          title="공정변경"
+          description="BOM 품목 기준으로 생산 공정을 변경합니다."
         />
 
-        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-          <div className="text-xs text-blue-600">선택 품목</div>
-          <div className="mt-1 text-lg font-semibold text-blue-900">
-            {itemId || "로딩중..."}
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <div className="text-xs text-gray-500">품목정보</div>
+          <div className="mt-1 text-lg font-semibold text-gray-900">
+            {bomItem.part_number} / {bomItem.part_name}
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
-          <KpiCard title="현재상태" value={currentProcess} />
-          <KpiCard title="변경상태" value={nextProcess} />
-          <KpiCard title="Workflow" value="Production" />
-          <KpiCard title="QC 이관" value={nextProcess === "검수요청" ? "ON" : "OFF"} />
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <label className="mb-2 block text-sm font-medium text-gray-700">
+            현재 공정
+          </label>
+
+          <select
+            value={currentProcess}
+            onChange={(event) => setCurrentProcess(event.target.value)}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+          >
+            {PROCESS_STEPS.map((step) => (
+              <option key={step} value={step}>
+                {step}
+              </option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex items-start gap-4">
-          <section className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white p-5">
-            <h2 className="text-base font-semibold text-gray-900">
-              생산 Workflow 변경
-            </h2>
+        <div className="rounded-lg border border-gray-200 bg-white p-4">
+          <label className="mb-2 block text-sm font-medium text-gray-700">
+            메모
+          </label>
 
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-2 block text-xs font-medium text-gray-500">
-                  변경할 생산 상태
-                </label>
+          <textarea
+            value={memo}
+            onChange={(event) => setMemo(event.target.value)}
+            rows={4}
+            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+            placeholder="공정 변경 메모를 입력하세요."
+          />
+        </div>
 
-                <select
-                  value={nextProcess}
-                  onChange={(event) => setNextProcess(event.target.value)}
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900"
-                >
-                  {processOptions.map((process) => (
-                    <option key={process} value={process}>
-                      {process}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="rounded-md bg-black px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {saving ? "저장 중..." : "저장"}
+          </button>
 
-              <div>
-                <label className="mb-2 block text-xs font-medium text-gray-500">
-                  작업 메모
-                </label>
-
-                <textarea
-                  rows={4}
-                  value={memo}
-                  onChange={(event) => setMemo(event.target.value)}
-                  placeholder="상태 변경 사유 또는 작업 내용을 입력하세요."
-                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-900"
-                />
-              </div>
-
-              <div className="mt-4 flex items-center gap-4 border-t border-gray-100 pt-4">
-                <button
-                  type="button"
-                  onClick={() => router.push("/workspace/partner/production")}
-                  className="h-11 rounded-md border border-gray-300 bg-white px-5 text-sm font-medium text-gray-700"
-                >
-                  취소
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="h-11 rounded-md bg-black px-6 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {saving ? "저장중..." : "생산 상태 저장"}
-                </button>
-              </div>
-            </div>
-          </section>
-
-          <aside className="w-80 shrink-0">
-            <RightDetailPanel
-              title="생산 상세"
-              items={[
-                { label: "품목번호", value: itemId || "-" },
-                { label: "현재상태", value: currentProcess },
-                { label: "변경상태", value: nextProcess },
-                { label: "검수요청 시", value: "qc_requests 자동 생성" },
-                { label: "공통 이력", value: "workflow + activity" },
-              ]}
-            />
-          </aside>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="rounded-md border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700"
+          >
+            취소
+          </button>
         </div>
       </div>
     </WorkspaceLayout>
