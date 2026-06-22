@@ -1,10 +1,16 @@
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
-import PageHeader from "@/components/workspace/PageHeader";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
-import KpiCard from "@/components/workspace/KpiCard";
-import DataTable from "@/components/workspace/DataTable";
-import RightDetailPanel from "@/components/workspace/RightDetailPanel";
+import ProjectListCard from "@/components/workspace/ProjectListCard";
+import ProductionSummaryCard from "@/components/workspace/ProductionSummaryCard";
+import RecentEventsCard from "@/components/workspace/RecentEventsCard";
+import QuickMenuCard from "@/components/workspace/QuickMenuCard";
 import { supabase } from "@/lib/supabase";
+
+type PartnerWorkspacePageProps = {
+  searchParams?: Promise<{
+    project?: string;
+  }>;
+};
 
 function getProjectStatusLabel(status: string) {
   if (status === "draft") return "작성중";
@@ -16,10 +22,20 @@ function getProjectStatusLabel(status: string) {
   if (status === "completed") return "완료";
   if (status === "hold") return "보류";
   if (status === "cancelled") return "취소";
-  return status;
+  return status ?? "-";
 }
 
-export default async function PartnerWorkspacePage() {
+function getPercent(count: number, total: number) {
+  if (!total) return 0;
+  return (count / total) * 100;
+}
+
+export default async function PartnerWorkspacePage({
+  searchParams,
+}: PartnerWorkspacePageProps) {
+  const params = await searchParams;
+  const selectedProjectCode = params?.project;
+
   const { data: projects, error } = await supabase
     .from("projects")
     .select("*")
@@ -27,21 +43,35 @@ export default async function PartnerWorkspacePage() {
 
   const { data: bomItems } = await supabase
     .from("bom_items")
-    .select("id, project_id");
+    .select("id, project_id, process_type");
+
+  const { data: productionUpdates } = await supabase
+    .from("production_updates")
+    .select("id, bom_item_id, process_step");
+
+  const { data: qcRequests } = await supabase
+    .from("qc_requests")
+    .select("id, bom_item_id, qc_status");
 
   const { data: shipments } = await supabase
     .from("shipments")
     .select("id, bom_item_id, shipment_status");
 
+  const { data: activityLogs } = await supabase
+    .from("activity_logs")
+    .select("id, project_id, bom_item_id, target_type, action, memo, created_at")
+    .order("created_at", { ascending: false })
+    .limit(8);
+
   if (error) {
     return (
       <WorkspaceLayout>
-        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-          <div className="font-semibold">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">
+          <div className="font-bold">
             프로젝트 데이터를 불러오지 못했습니다.
           </div>
 
-          <pre className="mt-2 whitespace-pre-wrap text-xs">
+          <pre className="mt-3 whitespace-pre-wrap text-xs">
             {JSON.stringify(error, null, 2)}
           </pre>
         </div>
@@ -51,15 +81,25 @@ export default async function PartnerWorkspacePage() {
 
   const bomCountByProject = new Map<string, number>();
   const bomProjectMap = new Map<string, string>();
+  const bomProcessMap = new Map<string, string>();
 
   bomItems?.forEach((item) => {
     const projectId = String(item.project_id);
     const bomId = String(item.id);
 
     bomProjectMap.set(bomId, projectId);
+    bomProcessMap.set(bomId, item.process_type ?? "대기");
+
     bomCountByProject.set(
       projectId,
       (bomCountByProject.get(projectId) ?? 0) + 1
+    );
+  });
+
+  productionUpdates?.forEach((update) => {
+    bomProcessMap.set(
+      String(update.bom_item_id),
+      update.process_step ?? "대기"
     );
   });
 
@@ -78,10 +118,9 @@ export default async function PartnerWorkspacePage() {
     }
   });
 
-  const projectRows =
+  const allProjectRows =
     projects?.map((project) => {
       const projectId = String(project.id);
-      const statusLabel = getProjectStatusLabel(project.status);
 
       return {
         id: project.project_code,
@@ -90,106 +129,233 @@ export default async function PartnerWorkspacePage() {
         customer_name: project.customer_name ?? "-",
         industry: project.industry ?? "-",
         due_date: project.due_date ?? "-",
-        current_stage: statusLabel,
+        current_stage: getProjectStatusLabel(project.status),
         bom_count: bomCountByProject.get(projectId) ?? 0,
         shipment_ready_count: shipmentReadyByProject.get(projectId) ?? 0,
+        raw_status: project.status,
         status:
           project.status === "completed"
             ? "완료"
             : project.status === "hold" || project.status === "cancelled"
               ? "주의"
               : "진행중",
-        action:
-          project.status === "completed"
-            ? "이력보기"
-            : "생산관리",
       };
     }) ?? [];
 
-  const totalProjects = projectRows.length;
+  const projectRows = selectedProjectCode
+    ? allProjectRows.filter(
+        (project) => project.project_no === selectedProjectCode
+      )
+    : allProjectRows.filter((project) => project.raw_status !== "completed");
 
-  const activeProjects = projectRows.filter(
-    (project) => project.status === "진행중"
-  ).length;
+  const filteredProjectIds = new Set(
+    projectRows
+      .map((project) => {
+        const matchedProject = projects?.find(
+          (item) => item.project_code === project.project_no
+        );
 
-  const completedProjects = projectRows.filter(
-    (project) => project.status === "완료"
-  ).length;
+        return matchedProject?.id ? String(matchedProject.id) : null;
+      })
+      .filter(Boolean)
+  );
 
-  const totalBomCount =
-    bomItems?.length ?? 0;
+  const filteredBomItems =
+    bomItems?.filter((item) =>
+      filteredProjectIds.has(String(item.project_id))
+    ) ?? [];
 
-  const totalShipmentReady =
-    shipments?.filter((shipment) => shipment.shipment_status === "ready")
-      .length ?? 0;
+  const filteredBomIds = new Set(
+    filteredBomItems.map((item) => String(item.id))
+  );
+
+  const filteredShipments =
+    shipments?.filter((shipment) =>
+      filteredBomIds.has(String(shipment.bom_item_id))
+    ) ?? [];
+
+  const filteredQcRequests =
+    qcRequests?.filter((qc) =>
+      filteredBomIds.has(String(qc.bom_item_id))
+    ) ?? [];
+
+  const totalBomCount = filteredBomItems.length;
+
+  const processCounts = {
+    waiting: 0,
+    materialIn: 0,
+    materialCheck: 0,
+    machiningWait: 0,
+    machining: 0,
+    machiningDone: 0,
+    qcRequested: 0,
+    qcInspecting: 0,
+    shipmentReady: 0,
+    shipped: 0,
+  };
+
+  filteredBomItems.forEach((item) => {
+    const process = bomProcessMap.get(String(item.id)) ?? "대기";
+
+    if (process === "대기") processCounts.waiting += 1;
+    if (process === "소재입고") processCounts.materialIn += 1;
+    if (process === "소재검수") processCounts.materialCheck += 1;
+    if (process === "가공대기") processCounts.machiningWait += 1;
+    if (process === "내부공정" || process === "외부공정")
+      processCounts.machining += 1;
+    if (process === "가공완료") processCounts.machiningDone += 1;
+    if (process === "검수요청") processCounts.qcRequested += 1;
+  });
+
+  filteredQcRequests.forEach((qc) => {
+    if (qc.qc_status === "inspecting") {
+      processCounts.qcInspecting += 1;
+    }
+  });
+
+  filteredShipments.forEach((shipment) => {
+    if (shipment.shipment_status === "ready") {
+      processCounts.shipmentReady += 1;
+    }
+
+    if (shipment.shipment_status === "shipped") {
+      processCounts.shipped += 1;
+    }
+  });
+
+  const productionSummaryItems = [
+    {
+      label: "소재준비",
+      count: processCounts.waiting,
+      percent: getPercent(processCounts.waiting, totalBomCount),
+      color: "bg-slate-500",
+    },
+    {
+      label: "소재입고",
+      count: processCounts.materialIn,
+      percent: getPercent(processCounts.materialIn, totalBomCount),
+      color: "bg-blue-500",
+    },
+    {
+      label: "소재검수",
+      count: processCounts.materialCheck,
+      percent: getPercent(processCounts.materialCheck, totalBomCount),
+      color: "bg-cyan-500",
+    },
+    {
+      label: "가공대기",
+      count: processCounts.machiningWait,
+      percent: getPercent(processCounts.machiningWait, totalBomCount),
+      color: "bg-indigo-500",
+    },
+    {
+      label: "가공중",
+      count: processCounts.machining,
+      percent: getPercent(processCounts.machining, totalBomCount),
+      color: "bg-orange-500",
+    },
+    {
+      label: "가공완료",
+      count: processCounts.machiningDone,
+      percent: getPercent(processCounts.machiningDone, totalBomCount),
+      color: "bg-emerald-500",
+    },
+    {
+      label: "검수요청",
+      count: processCounts.qcRequested,
+      percent: getPercent(processCounts.qcRequested, totalBomCount),
+      color: "bg-purple-500",
+    },
+    {
+      label: "품질검수",
+      count: processCounts.qcInspecting,
+      percent: getPercent(processCounts.qcInspecting, totalBomCount),
+      color: "bg-pink-500",
+    },
+    {
+      label: "출하준비",
+      count: processCounts.shipmentReady,
+      percent: getPercent(processCounts.shipmentReady, totalBomCount),
+      color: "bg-yellow-500",
+    },
+    {
+      label: "출하",
+      count: processCounts.shipped,
+      percent: getPercent(processCounts.shipped, totalBomCount),
+      color: "bg-green-600",
+    },
+  ];
+
+  const recentEvents =
+    activityLogs
+      ?.filter((log) => {
+        if (!selectedProjectCode) return true;
+
+        return filteredProjectIds.has(String(log.project_id));
+      })
+      .map((log) => ({
+        time: log.created_at
+          ? new Date(log.created_at).toLocaleString("ko-KR")
+          : "-",
+        category: log.target_type ?? "-",
+        event: log.action ?? "-",
+        target: log.bom_item_id ? String(log.bom_item_id).slice(0, 8) : "-",
+        owner: "시스템",
+      })) ?? [];
 
   return (
     <WorkspaceLayout>
-      <div className="space-y-6">
-        <PageHeader
-          title="진행중 프로젝트"
-          description="프로젝트번호 기준으로 현재 제조 운영 상태를 관리합니다."
-        />
+      <div className="space-y-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-black text-slate-950">
+              진행중인 프로젝트
+            </h1>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              프로젝트별 제조 진행 현황과 주요 운영 이벤트를 확인합니다.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
+              검색
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
+              필터
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600">
+              알림
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600">
+              메일
+            </div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-white">
+              DT
+            </div>
+          </div>
+        </div>
 
         <ProjectSelector
-          projects={projectRows.map((project) => ({
+          projects={allProjectRows.map((project) => ({
             id: project.project_no,
             name: `${project.project_no} / ${project.project_name}`,
           }))}
         />
 
-        <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-          <div className="text-xs text-blue-600">G1 프로젝트 기준</div>
-          <div className="mt-1 text-lg font-semibold text-blue-900">
-            프로젝트번호 = G1 공식 운영 식별자 / 프로젝트명 = 고객 지정명
-          </div>
+        <div className="grid grid-cols-[1fr_380px] gap-5">
+          <ProjectListCard
+  projects={projectRows}
+  allProjects={allProjectRows}
+  selectedProjectCode={selectedProjectCode}
+/>
+
+          <ProductionSummaryCard items={productionSummaryItems} />
         </div>
 
-        <div className="grid grid-cols-5 gap-4">
-          <KpiCard title="전체 프로젝트" value={totalProjects} />
-          <KpiCard title="진행중 프로젝트" value={activeProjects} />
-          <KpiCard title="완료 프로젝트" value={completedProjects} />
-          <KpiCard title="BOM 품목" value={totalBomCount} />
-          <KpiCard title="출하준비" value={totalShipmentReady} />
-        </div>
+        <div className="grid grid-cols-[1fr_380px] gap-5">
+          <RecentEventsCard events={recentEvents} />
 
-        <div className="flex items-start gap-4">
-          <div className="flex-1">
-            <DataTable
-              columns={[
-                { key: "project_no", label: "프로젝트번호" },
-                { key: "project_name", label: "프로젝트명" },
-                { key: "customer_name", label: "고객사" },
-                { key: "industry", label: "산업군" },
-                { key: "due_date", label: "납기일" },
-                { key: "current_stage", label: "현재단계" },
-                { key: "bom_count", label: "BOM 품목" },
-                { key: "shipment_ready_count", label: "출하준비" },
-                { key: "status", label: "상태", type: "status" },
-                {
-                  key: "action",
-                  label: "액션",
-                  type: "link",
-                  hrefPrefix: "/workspace/partner/production?project=",
-                },
-              ]}
-              data={projectRows}
-            />
-          </div>
-
-          <div className="w-80 shrink-0">
-            <RightDetailPanel
-              title="프로젝트 데이터"
-              items={[
-                { label: "데이터 기준", value: "Supabase projects" },
-                { label: "공식 식별자", value: "프로젝트번호" },
-                { label: "전체 프로젝트", value: totalProjects },
-                { label: "진행중", value: activeProjects },
-                { label: "완료", value: completedProjects },
-                { label: "총 BOM", value: totalBomCount },
-              ]}
-            />
-          </div>
+          <QuickMenuCard />
         </div>
       </div>
     </WorkspaceLayout>

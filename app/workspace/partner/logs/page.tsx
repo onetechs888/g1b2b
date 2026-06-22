@@ -1,9 +1,16 @@
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import PageHeader from "@/components/workspace/PageHeader";
+import ProjectSelector from "@/components/workspace/ProjectSelector";
 import KpiCard from "@/components/workspace/KpiCard";
 import DataTable from "@/components/workspace/DataTable";
 import RightDetailPanel from "@/components/workspace/RightDetailPanel";
 import { supabase } from "@/lib/supabase";
+
+type LogsPageProps = {
+  searchParams?: Promise<{
+    project?: string;
+  }>;
+};
 
 function getWorkflowTypeLabel(type: string) {
   if (type === "production") return "생산관리";
@@ -27,26 +34,60 @@ function getActionLabel(action: string) {
   return action ?? "-";
 }
 
-export default async function LogsPage() {
-  const { data: histories, error: historyError } = await supabase
-    .from("workflow_status_histories")
-    .select("*")
-    .order("changed_at", { ascending: false });
-
-  const { data: activityLogs, error: activityError } = await supabase
-    .from("activity_logs")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  const { data: bomItems, error: bomError } = await supabase
-    .from("bom_items")
-    .select("id, project_id, part_number, part_name");
+export default async function LogsPage({ searchParams }: LogsPageProps) {
+  const params = await searchParams;
+  const selectedProjectCode = params?.project;
 
   const { data: projects, error: projectError } = await supabase
     .from("projects")
-    .select("id, project_code, project_name, due_date");
+    .select("id, project_code, project_name, due_date")
+    .order("project_code", { ascending: true });
 
-  if (historyError || activityError || bomError || projectError) {
+  if (projectError) {
+    return (
+      <WorkspaceLayout>
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <div className="font-semibold">
+            프로젝트 데이터를 불러오지 못했습니다.
+          </div>
+
+          <pre className="mt-2 whitespace-pre-wrap text-xs">
+            {JSON.stringify(projectError, null, 2)}
+          </pre>
+        </div>
+      </WorkspaceLayout>
+    );
+  }
+
+  const selectedProject = selectedProjectCode
+    ? projects?.find((project) => project.project_code === selectedProjectCode)
+    : projects?.[0];
+
+  const { data: bomItems, error: bomError } = await supabase
+    .from("bom_items")
+    .select("id, project_id, part_number, part_name")
+    .eq("project_id", selectedProject?.id ?? "")
+    .order("part_number", { ascending: true });
+
+  const bomIds = bomItems?.map((item) => item.id) ?? [];
+
+  const { data: histories, error: historyError } = bomIds.length
+    ? await supabase
+        .from("workflow_status_histories")
+        .select("*")
+        .in("bom_item_id", bomIds)
+        .order("changed_at", { ascending: false })
+    : { data: [], error: null };
+
+  const { data: activityLogs, error: activityError } = selectedProject?.id
+    ? await supabase
+        .from("activity_logs")
+        .select("*")
+        .eq("project_id", selectedProject.id)
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+
+  if (historyError || activityError || bomError) {
     return (
       <WorkspaceLayout>
         <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
@@ -55,11 +96,7 @@ export default async function LogsPage() {
           </div>
 
           <pre className="mt-2 whitespace-pre-wrap text-xs">
-            {JSON.stringify(
-              historyError || activityError || bomError || projectError,
-              null,
-              2
-            )}
+            {JSON.stringify(historyError || activityError || bomError, null, 2)}
           </pre>
         </div>
       </WorkspaceLayout>
@@ -67,25 +104,20 @@ export default async function LogsPage() {
   }
 
   const bomMap = new Map();
+
   bomItems?.forEach((item) => {
     bomMap.set(String(item.id), item);
-  });
-
-  const projectMap = new Map();
-  projects?.forEach((project) => {
-    projectMap.set(String(project.id), project);
   });
 
   const statusHistoryRows =
     histories?.map((history) => {
       const bom = bomMap.get(String(history.bom_item_id));
-      const project = bom ? projectMap.get(String(bom.project_id)) : null;
 
       return {
         id: history.id,
         history_id: history.id.slice(0, 8),
-        project_no: project?.project_code ?? "-",
-        project_name: project?.project_name ?? "-",
+        project_no: selectedProject?.project_code ?? "-",
+        project_name: selectedProject?.project_name ?? "-",
         bom_item_id: bom?.part_number ?? "-",
         item_name: bom?.part_name ?? "-",
         workflow_type: getWorkflowTypeLabel(history.workflow_type),
@@ -105,17 +137,11 @@ export default async function LogsPage() {
         ? bomMap.get(String(log.bom_item_id))
         : null;
 
-      const project = log.project_id
-        ? projectMap.get(String(log.project_id))
-        : bom
-          ? projectMap.get(String(bom.project_id))
-          : null;
-
       return {
         id: log.id,
         log_id: log.id.slice(0, 8),
-        project_no: project?.project_code ?? "-",
-        project_name: project?.project_name ?? "-",
+        project_no: selectedProject?.project_code ?? "-",
+        project_name: selectedProject?.project_name ?? "-",
         bom_item_id: bom?.part_number ?? "-",
         item_name: bom?.part_name ?? "-",
         target_type: log.target_type ?? "-",
@@ -144,26 +170,36 @@ export default async function LogsPage() {
     (item) => item.workflow_type === "정산관리"
   ).length;
 
-  const currentProject = statusHistoryRows[0] ?? activityLogRows[0];
-
   return (
     <WorkspaceLayout>
       <div className="space-y-6">
         <PageHeader
-          title="로그"
-          description="프로젝트 기준으로 상태이력과 활동로그를 통합 추적합니다."
+          title="이력관리"
+          description="선택된 프로젝트 기준으로 상태이력과 활동로그를 통합 추적합니다."
+        />
+
+        <ProjectSelector
+          projects={
+            projects?.map((project) => ({
+              id: project.project_code,
+              name: `${project.project_code} / ${project.project_name}`,
+            })) ?? []
+          }
         />
 
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
           <div className="text-xs text-blue-600">프로젝트 정보</div>
           <div className="mt-1 text-lg font-semibold text-blue-900">
-            {currentProject?.project_no ?? "-"} /{" "}
-            {currentProject?.project_name ?? "-"}
+            {selectedProject?.project_code ?? "-"} /{" "}
+            {selectedProject?.project_name ?? "-"}
+          </div>
+          <div className="mt-2 text-sm text-blue-700">
+            납기일: {selectedProject?.due_date ?? "-"}
           </div>
         </div>
 
         <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-          <div className="text-xs text-blue-600">로그 기준</div>
+          <div className="text-xs text-blue-600">이력관리 기준</div>
           <div className="mt-1 text-lg font-semibold text-blue-900">
             상태이력(workflow_status_histories) + 활동로그(activity_logs)
           </div>
@@ -236,15 +272,15 @@ export default async function LogsPage() {
 
           <div className="w-80 shrink-0">
             <RightDetailPanel
-              title="로그 데이터"
+              title="이력 데이터"
               items={[
                 {
                   label: "프로젝트번호",
-                  value: currentProject?.project_no ?? "-",
+                  value: selectedProject?.project_code ?? "-",
                 },
                 {
                   label: "프로젝트명",
-                  value: currentProject?.project_name ?? "-",
+                  value: selectedProject?.project_name ?? "-",
                 },
                 {
                   label: "상태이력",
