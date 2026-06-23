@@ -1,43 +1,58 @@
+import Link from "next/link";
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
 import { supabase } from "@/lib/supabase";
 
-type SettlementPageProps = {
+type SettlementWorkspacePageProps = {
   searchParams: Promise<{
     project?: string;
   }>;
 };
 
 function formatMoney(value: number) {
-  return `${Number(value || 0).toLocaleString()} 원`;
+  return new Intl.NumberFormat("ko-KR", {
+    style: "currency",
+    currency: "KRW",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function getNumber(value: unknown) {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
 function getSettlementStatusLabel(status: string) {
-  if (status === "shipment_completed") return "출하완료";
-  if (status === "invoice_requested") return "세금계산서 요청";
-  if (status === "invoice_issued") return "세금계산서 발행";
-  if (status === "payment_scheduled") return "입금예정";
+  if (status === "pending") return "정산대기";
+  if (status === "not_ready") return "정산대기";
+  if (status === "invoiced") return "청구완료";
+  if (status === "scheduled") return "입금예정";
+  if (status === "paid") return "입금완료";
   if (status === "completed") return "정산완료";
+  if (status === "hold") return "보류";
   return status ?? "-";
 }
 
 function getSettlementStatusBadgeClass(status: string) {
-  if (status === "shipment_completed") return "bg-slate-100 text-slate-700";
-  if (status === "invoice_requested") return "bg-orange-50 text-orange-600";
-  if (status === "invoice_issued") return "bg-blue-50 text-blue-600";
-  if (status === "payment_scheduled") return "bg-purple-50 text-purple-600";
-  if (status === "completed") return "bg-emerald-50 text-emerald-600";
+  if (status === "pending" || status === "not_ready") {
+    return "bg-slate-100 text-slate-700";
+  }
+
+  if (status === "invoiced") return "bg-blue-50 text-blue-600";
+  if (status === "scheduled") return "bg-cyan-50 text-cyan-600";
+
+  if (status === "paid" || status === "completed") {
+    return "bg-emerald-50 text-emerald-600";
+  }
+
+  if (status === "hold") return "bg-orange-50 text-orange-600";
+
   return "bg-slate-50 text-slate-600";
 }
 
-function getPercent(count: number, total: number) {
-  if (!total) return 0;
-  return Math.round((count / total) * 1000) / 10;
-}
-
-export default async function SettlementPage({
+export default async function SettlementWorkspacePage({
   searchParams,
-}: SettlementPageProps) {
+}: SettlementWorkspacePageProps) {
   const params = await searchParams;
   const selectedProjectCode = params?.project;
 
@@ -70,6 +85,14 @@ export default async function SettlementPage({
 
   const bomIds = bomItems?.map((item) => item.id) ?? [];
 
+  const { data: shipments, error: shipmentError } = bomIds.length
+    ? await supabase
+        .from("shipments")
+        .select("*")
+        .in("bom_item_id", bomIds)
+        .order("created_at", { ascending: false })
+    : { data: [], error: null };
+
   const { data: settlements, error: settlementError } = bomIds.length
     ? await supabase
         .from("settlements")
@@ -77,16 +100,6 @@ export default async function SettlementPage({
         .in("bom_item_id", bomIds)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
-
-  const shipmentIds =
-    settlements?.map((item) => item.shipment_id).filter(Boolean) ?? [];
-
-  const { data: shipments } = shipmentIds.length
-    ? await supabase
-        .from("shipments")
-        .select("*")
-        .in("id", shipmentIds)
-    : { data: [] };
 
   const { data: activityLogs } = await supabase
     .from("activity_logs")
@@ -96,7 +109,7 @@ export default async function SettlementPage({
     .order("created_at", { ascending: false })
     .limit(5);
 
-  if (bomError || settlementError) {
+  if (bomError || shipmentError || settlementError) {
     return (
       <WorkspaceLayout>
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
@@ -106,94 +119,184 @@ export default async function SettlementPage({
     );
   }
 
-  const bomMap = new Map();
-  bomItems?.forEach((item) => {
-    bomMap.set(String(item.id), item);
+  const shipmentMap = new Map<string, any[]>();
+
+  shipments?.forEach((shipment) => {
+    const key = String(shipment.bom_item_id);
+    shipmentMap.set(key, [...(shipmentMap.get(key) ?? []), shipment]);
   });
 
-  const shipmentMap = new Map();
-  shipments?.forEach((item) => {
-    shipmentMap.set(String(item.id), item);
+  const settlementMap = new Map<string, any[]>();
+
+  settlements?.forEach((settlement) => {
+    const key = String(settlement.bom_item_id);
+    settlementMap.set(key, [...(settlementMap.get(key) ?? []), settlement]);
   });
 
   const rows =
-    settlements?.map((settlement, index) => {
-      const bom = bomMap.get(String(settlement.bom_item_id));
-      const shipment = shipmentMap.get(String(settlement.shipment_id));
+    bomItems?.map((item) => {
+      const bomId = String(item.id);
+      const quantity = getNumber(item.quantity);
+      const unitPrice = getNumber(item.unit_price);
+      const supplyAmount = quantity * unitPrice;
+      const vatAmount = Math.round(supplyAmount * 0.1);
+      const totalAmount = supplyAmount + vatAmount;
+
+      const itemShipments = shipmentMap.get(bomId) ?? [];
+      const itemSettlements = settlementMap.get(bomId) ?? [];
+
+      const shipped = itemShipments.some(
+        (shipment) =>
+          shipment.shipment_status === "completed" ||
+          shipment.shipment_status === "shipped" ||
+          shipment.status === "completed" ||
+          shipment.status === "shipped"
+      );
+
+      const paidAmount = itemSettlements.reduce((sum, settlement) => {
+        const amount =
+          getNumber(settlement.paid_amount) ||
+          getNumber(settlement.payment_amount) ||
+          getNumber(settlement.amount) ||
+          getNumber(settlement.total_amount);
+
+        const status = settlement.status ?? settlement.settlement_status;
+
+        if (
+          status === "paid" ||
+          status === "completed" ||
+          settlement.paid_at ||
+          settlement.payment_date
+        ) {
+          return sum + amount;
+        }
+
+        return sum;
+      }, 0);
+
+      const latestSettlement = itemSettlements[0];
+
+      const settlementStatus =
+        latestSettlement?.status ??
+        latestSettlement?.settlement_status ??
+        (paidAmount >= totalAmount && totalAmount > 0
+          ? "paid"
+          : shipped
+            ? "pending"
+            : "not_ready");
 
       return {
-        no: index + 1,
-        id: settlement.id,
-        bom_item_id: settlement.bom_item_id,
-        shipment_id: settlement.shipment_id,
-        part_number: bom?.part_number ?? "-",
-        part_name: bom?.part_name ?? "-",
-        drawing_no: bom?.drawing_no ?? "-",
-        quantity: bom?.quantity ?? 0,
-        unit: bom?.unit ?? "",
-        amount: settlement.amount ?? 0,
-        vat: settlement.vat ?? 0,
-        total_amount: settlement.total_amount ?? 0,
-        status: settlement.status ?? "shipment_completed",
-        invoice_no: settlement.invoice_no ?? "-",
-        invoice_date: settlement.invoice_date ?? "-",
-        payment_due_date: settlement.payment_due_date ?? "-",
-        payment_date: settlement.payment_date ?? "-",
-        shipment_date: shipment?.shipment_date ?? "-",
-        tracking_number: shipment?.tracking_number ?? "-",
-        memo: settlement.memo ?? "-",
-        created_at: settlement.created_at ?? "-",
+        id: item.id,
+        part_number: item.part_number ?? "-",
+        part_name: item.part_name ?? "-",
+        drawing_no: item.drawing_no ?? "-",
+        quantity,
+        unit_price: unitPrice,
+        supply_amount: supplyAmount,
+        vat_amount: vatAmount,
+        total_amount: totalAmount,
+        paid_amount: paidAmount,
+        receivable_amount: Math.max(totalAmount - paidAmount, 0),
+        shipped,
+        settlement_status: settlementStatus,
+        shipment_date:
+          itemShipments[0]?.shipped_at ??
+          itemShipments[0]?.shipment_date ??
+          itemShipments[0]?.created_at ??
+          "-",
       };
     }) ?? [];
 
-  const totalCount = rows.length;
-  const shipmentCompletedCount = rows.filter(
-    (row) => row.status === "shipment_completed"
-  ).length;
-  const invoiceRequestedCount = rows.filter(
-    (row) => row.status === "invoice_requested"
-  ).length;
-  const invoiceIssuedCount = rows.filter(
-    (row) => row.status === "invoice_issued"
-  ).length;
-  const paymentScheduledCount = rows.filter(
-    (row) => row.status === "payment_scheduled"
-  ).length;
-  const completedCount = rows.filter((row) => row.status === "completed").length;
+  const settlementTargetRows = rows.filter((row) => row.shipped);
 
-  const totalAmount = rows.reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-  const supplyAmount = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-  const vatAmount = rows.reduce((sum, row) => sum + Number(row.vat || 0), 0);
-  const completedAmount = rows
-    .filter((row) => row.status === "completed")
-    .reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
-  const unpaidAmount = totalAmount - completedAmount;
+  const totalContractAmount = rows.reduce(
+    (sum, row) => sum + row.total_amount,
+    0
+  );
 
-  const progressPercent = getPercent(completedCount, totalCount);
+  const totalBillingAmount = settlementTargetRows.reduce(
+    (sum, row) => sum + row.total_amount,
+    0
+  );
 
-  const recentRows = rows.slice(0, 5);
+  const pendingAmount = settlementTargetRows
+    .filter(
+      (row) =>
+        row.settlement_status === "pending" ||
+        row.settlement_status === "not_ready"
+    )
+    .reduce((sum, row) => sum + row.total_amount, 0);
+
+  const totalPaidAmount = rows.reduce((sum, row) => sum + row.paid_amount, 0);
+
+  const totalReceivableAmount = settlementTargetRows
+    .filter(
+      (row) =>
+        row.settlement_status === "invoiced" ||
+        row.settlement_status === "scheduled"
+    )
+    .reduce((sum, row) => sum + row.receivable_amount, 0);
+
+  const paidCount = settlementTargetRows.filter(
+    (row) =>
+      row.settlement_status === "paid" ||
+      row.settlement_status === "completed"
+  ).length;
+
+  const pendingCount = settlementTargetRows.filter(
+    (row) =>
+      row.settlement_status === "pending" ||
+      row.settlement_status === "not_ready"
+  ).length;
+
+  const invoicedCount = settlementTargetRows.filter(
+    (row) => row.settlement_status === "invoiced"
+  ).length;
+
+  const scheduledCount = settlementTargetRows.filter(
+    (row) => row.settlement_status === "scheduled"
+  ).length;
+
+  const completionRate = settlementTargetRows.length
+    ? Math.round((paidCount / settlementTargetRows.length) * 100)
+    : 0;
+
+  const recentSettlementRows = settlementTargetRows.slice(0, 5);
+
+  const receivableRows = settlementTargetRows
+    .filter(
+      (row) =>
+        row.receivable_amount > 0 &&
+        (row.settlement_status === "invoiced" ||
+          row.settlement_status === "scheduled")
+    )
+    .sort((a, b) => b.receivable_amount - a.receivable_amount)
+    .slice(0, 5);
+
+  const progressRows = [
+    { label: "정산대기", count: pendingCount, color: "bg-slate-500" },
+    { label: "청구완료", count: invoicedCount, color: "bg-blue-600" },
+    { label: "입금예정", count: scheduledCount, color: "bg-cyan-500" },
+    { label: "입금완료", count: paidCount, color: "bg-emerald-500" },
+  ];
 
   return (
     <WorkspaceLayout>
       <div className="space-y-5">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <div className="text-sm font-black text-slate-500">
-              정산관리 &gt; 정산 관리
-            </div>
-
-            <h1 className="mt-2 text-2xl font-black text-slate-950">
-              정산관리
+            <h1 className="text-2xl font-black text-slate-950">
+              정산관리 WORKSPACE
             </h1>
-
             <p className="mt-2 text-sm font-medium text-slate-500">
-              납품완료 기준 정산 현황과 세금계산서, 입금 상태를 관리합니다.
+              프로젝트 기준 정산 현황을 확인하고, BOM 기준 정산 대상을
+              관리합니다.
             </p>
           </div>
 
           <div className="flex items-center gap-3">
             <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-              프로젝트명, PO번호, 고객사 검색
+              프로젝트명, 품목명, 도면번호 검색
             </div>
 
             <button className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">
@@ -203,11 +306,12 @@ export default async function SettlementPage({
         </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="grid grid-cols-[240px_repeat(4,1fr)] items-center gap-4">
+          <div className="grid grid-cols-[240px_repeat(6,1fr)] items-center gap-4">
             <div>
               <div className="text-xs font-bold text-slate-500">
                 프로젝트 (PO)
               </div>
+
               <div className="mt-3">
                 <ProjectSelector
                   projects={
@@ -222,237 +326,277 @@ export default async function SettlementPage({
 
             <div className="border-l border-slate-200 pl-5">
               <div className="text-xs font-bold text-slate-500">
-                총 공급가액
+                총 계약금액
               </div>
-              <div className="mt-2 text-2xl font-black text-slate-950">
-                {formatMoney(supplyAmount)}
-              </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">
-                VAT
-              </div>
-              <div className="mt-2 text-2xl font-black text-orange-600">
-                {formatMoney(vatAmount)}
+              <div className="mt-2 text-xl font-black text-slate-950">
+                {formatMoney(totalContractAmount)}
               </div>
             </div>
 
             <div className="border-l border-slate-200 pl-5">
               <div className="text-xs font-bold text-slate-500">
-                총 정산금액
+                총 청구대상
               </div>
-              <div className="mt-2 text-2xl font-black text-blue-600">
-                {formatMoney(totalAmount)}
+              <div className="mt-2 text-xl font-black text-blue-600">
+                {formatMoney(totalBillingAmount)}
               </div>
             </div>
 
             <div className="border-l border-slate-200 pl-5">
               <div className="text-xs font-bold text-slate-500">
-                미정산금액
+                정산대기금액
               </div>
-              <div className="mt-2 text-2xl font-black text-red-600">
-                {formatMoney(unpaidAmount)}
+              <div className="mt-2 text-xl font-black text-orange-600">
+                {formatMoney(pendingAmount)}
               </div>
-              <div className="mt-1 text-xs font-bold text-blue-600">
-                정산 완료율 {progressPercent}%
+            </div>
+
+            <div className="border-l border-slate-200 pl-5">
+              <div className="text-xs font-bold text-slate-500">
+                총 입금금액
+              </div>
+              <div className="mt-2 text-xl font-black text-emerald-600">
+                {formatMoney(totalPaidAmount)}
+              </div>
+            </div>
+
+            <div className="border-l border-slate-200 pl-5">
+              <div className="text-xs font-bold text-slate-500">미수금액</div>
+              <div className="mt-2 text-xl font-black text-red-600">
+                {formatMoney(totalReceivableAmount)}
+              </div>
+            </div>
+
+            <div className="border-l border-slate-200 pl-5">
+              <div className="text-xs font-bold text-slate-500">
+                정산완료율
+              </div>
+              <div className="mt-2 text-xl font-black text-slate-950">
+                {completionRate}%
               </div>
             </div>
           </div>
         </section>
 
-        <div className="grid grid-cols-[1fr_320px] gap-5">
-          <section className="rounded-2xl border border-slate-200 bg-white">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="w-72 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-                  품목명, 도면번호 검색
+        <div className="grid grid-cols-2 gap-5">
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-black text-slate-950">
+                정산 진행 현황
+              </h2>
+
+              <Link
+                href={`/workspace/partner/settlement/items?project=${
+                  selectedProject?.project_code ?? ""
+                }`}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
+              >
+                정산대상관리
+              </Link>
+            </div>
+
+            <div className="mt-6 grid grid-cols-[220px_1fr] gap-8">
+              <div className="flex h-56 w-56 items-center justify-center rounded-full border-[34px] border-emerald-500">
+                <div className="text-center">
+                  <div className="text-4xl font-black text-slate-950">
+                    {settlementTargetRows.length}
+                  </div>
+                  <div className="mt-1 text-sm font-bold text-slate-500">
+                    정산대상
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="grid grid-cols-[1fr_80px_80px] border-b border-slate-200 py-3 text-sm font-black text-slate-600">
+                  <div>상태</div>
+                  <div className="text-center">건수</div>
+                  <div className="text-center">비율</div>
                 </div>
 
-                <select className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">
-                  <option>정산 상태 전체</option>
-                </select>
-              </div>
-
-              <button className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white">
-                엑셀 다운로드
-              </button>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">No.</th>
-                    <th className="px-4 py-3">품목 코드</th>
-                    <th className="px-4 py-3">품목명</th>
-                    <th className="px-4 py-3">도면번호</th>
-                    <th className="px-4 py-3">공급가액</th>
-                    <th className="px-4 py-3">VAT</th>
-                    <th className="px-4 py-3">합계금액</th>
-                    <th className="px-4 py-3">정산상태</th>
-                    <th className="px-4 py-3">세금계산서</th>
-                    <th className="px-4 py-3">입금예정일</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {rows.length ? (
-                    rows.map((row) => (
-                      <tr key={row.id} className="hover:bg-blue-50">
-                        <td className="px-4 py-3 font-bold text-slate-600">
-                          {row.no}
-                        </td>
-
-                        <td className="px-4 py-3 font-black text-slate-950">
-                          {row.part_number}
-                        </td>
-
-                        <td className="px-4 py-3 font-bold text-slate-800">
-                          {row.part_name}
-                        </td>
-
-                        <td className="px-4 py-3 font-medium text-slate-600">
-                          {row.drawing_no}
-                        </td>
-
-                        <td className="px-4 py-3 font-bold text-slate-700">
-                          {formatMoney(row.amount)}
-                        </td>
-
-                        <td className="px-4 py-3 font-bold text-slate-700">
-                          {formatMoney(row.vat)}
-                        </td>
-
-                        <td className="px-4 py-3 font-black text-blue-600">
-                          {formatMoney(row.total_amount)}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-lg px-2 py-1 text-xs font-black ${getSettlementStatusBadgeClass(
-                              row.status
-                            )}`}
-                          >
-                            {getSettlementStatusLabel(row.status)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 font-medium text-slate-600">
-                          {row.invoice_no}
-                        </td>
-
-                        <td className="px-4 py-3 font-bold text-slate-600">
-                          {row.payment_due_date}
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={10}
-                        className="px-4 py-10 text-center text-sm font-bold text-slate-400"
-                      >
-                        정산 대상 데이터가 없습니다. 출하관리에서 납품완료 처리가 필요합니다.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-
-          <aside className="space-y-5">
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-black text-slate-950">
-                  정산 요약
-                </h2>
-                <span className="text-sm font-black text-blue-600">
-                  {progressPercent}%
-                </span>
-              </div>
-
-              <div className="mt-5 space-y-3">
-                {[
-                  ["출하완료", shipmentCompletedCount],
-                  ["세금계산서 요청", invoiceRequestedCount],
-                  ["세금계산서 발행", invoiceIssuedCount],
-                  ["입금예정", paymentScheduledCount],
-                  ["정산완료", completedCount],
-                ].map(([label, count]) => (
+                {progressRows.map((item) => (
                   <div
-                    key={String(label)}
-                    className="flex items-center justify-between text-sm"
+                    key={item.label}
+                    className="grid grid-cols-[1fr_80px_80px] border-b border-slate-100 py-3 text-sm"
                   >
-                    <span className="font-bold text-slate-600">{label}</span>
-                    <span className="font-black text-slate-950">{count}건</span>
+                    <div className="flex items-center gap-2 font-bold text-slate-800">
+                      <span className={`h-3 w-3 rounded-full ${item.color}`} />
+                      {item.label}
+                    </div>
+
+                    <div className="text-center font-bold">{item.count}건</div>
+
+                    <div className="text-center font-bold">
+                      {settlementTargetRows.length
+                        ? Math.round(
+                            (item.count / settlementTargetRows.length) * 100
+                          )
+                        : 0}
+                      %
+                    </div>
                   </div>
                 ))}
               </div>
-            </section>
+            </div>
+          </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-lg font-black text-slate-950">
-                최근 정산 활동
-              </h2>
+          <section className="rounded-2xl border border-slate-200 bg-white p-6">
+            <h2 className="text-xl font-black text-slate-950">미수금 현황</h2>
 
-              <div className="mt-5 divide-y divide-slate-100">
-                {activityLogs?.length ? (
-                  activityLogs.map((log) => (
-                    <div key={log.id} className="py-3">
+            <div className="mt-5 divide-y divide-slate-100">
+              {receivableRows.length ? (
+                receivableRows.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-4 py-4"
+                  >
+                    <div>
                       <div className="font-black text-slate-950">
-                        {log.action}
+                        {item.part_number} / {item.part_name}
                       </div>
-                      <div className="mt-1 text-xs font-medium text-slate-500">
-                        {log.memo ?? "-"}
+                      <div className="mt-1 text-sm font-medium text-slate-500">
+                        청구대상 {formatMoney(item.total_amount)}
                       </div>
                     </div>
-                  ))
-                ) : recentRows.length ? (
-                  recentRows.map((row) => (
-                    <div key={row.id} className="py-3">
-                      <div className="font-black text-slate-950">
-                        {row.part_number} / {row.part_name}
+
+                    <div className="text-right">
+                      <div className="font-black text-red-600">
+                        {formatMoney(item.receivable_amount)}
                       </div>
-                      <div className="mt-1 text-xs font-medium text-slate-500">
-                        {getSettlementStatusLabel(row.status)} ·{" "}
-                        {formatMoney(row.total_amount)}
+                      <div className="mt-1 text-xs font-bold text-slate-400">
+                        미수금
                       </div>
                     </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-10 text-center text-sm font-bold text-slate-400">
+                  미수금 데이터가 없습니다.
+                </div>
+              )}
+            </div>
+          </section>
+        </div>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-black text-slate-950">
+              최근 정산 대상 품목
+            </h2>
+
+            <Link
+              href={`/workspace/partner/settlement/items?project=${
+                selectedProject?.project_code ?? ""
+              }`}
+              className="text-sm font-black text-blue-600"
+            >
+              전체 보기 →
+            </Link>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-xl border border-slate-100">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-50 text-xs font-black text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">품목</th>
+                  <th className="px-4 py-3">출하일</th>
+                  <th className="px-4 py-3">공급가액</th>
+                  <th className="px-4 py-3">VAT</th>
+                  <th className="px-4 py-3">합계</th>
+                  <th className="px-4 py-3">상태</th>
+                </tr>
+              </thead>
+
+              <tbody className="divide-y divide-slate-100">
+                {recentSettlementRows.length ? (
+                  recentSettlementRows.map((item) => (
+                    <tr key={item.id}>
+                      <td className="px-4 py-3">
+                        <div className="font-black text-slate-950">
+                          {item.part_number}
+                        </div>
+                        <div className="text-xs font-medium text-slate-500">
+                          {item.part_name}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 font-bold text-slate-600">
+                        {item.shipment_date === "-"
+                          ? "-"
+                          : String(item.shipment_date).slice(0, 10)}
+                      </td>
+
+                      <td className="px-4 py-3 font-bold text-slate-700">
+                        {formatMoney(item.supply_amount)}
+                      </td>
+
+                      <td className="px-4 py-3 font-bold text-slate-700">
+                        {formatMoney(item.vat_amount)}
+                      </td>
+
+                      <td className="px-4 py-3 font-black text-slate-950">
+                        {formatMoney(item.total_amount)}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-lg px-2 py-1 text-xs font-black ${getSettlementStatusBadgeClass(
+                            item.settlement_status
+                          )}`}
+                        >
+                          {getSettlementStatusLabel(item.settlement_status)}
+                        </span>
+                      </td>
+                    </tr>
                   ))
                 ) : (
-                  <div className="py-10 text-center text-sm font-bold text-slate-400">
-                    최근 활동이 없습니다.
-                  </div>
+                  <tr>
+                    <td
+                      colSpan={6}
+                      className="px-4 py-10 text-center text-sm font-bold text-slate-400"
+                    >
+                      출하완료 기준 정산대상 데이터가 없습니다.
+                    </td>
+                  </tr>
                 )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-6">
+          <h2 className="text-xl font-black text-slate-950">
+            최근 정산 활동
+          </h2>
+
+          <div className="mt-5 divide-y divide-slate-100">
+            {activityLogs?.length ? (
+              activityLogs.map((log) => (
+                <div
+                  key={log.id}
+                  className="flex items-center justify-between py-4"
+                >
+                  <div>
+                    <div className="font-black text-slate-950">
+                      {log.action ?? "정산 활동"}
+                    </div>
+                    <div className="mt-1 text-sm font-medium text-slate-500">
+                      {log.memo ?? "-"}
+                    </div>
+                  </div>
+
+                  <div className="text-xs font-bold text-slate-400">
+                    {log.created_at ? String(log.created_at).slice(0, 19) : "-"}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="py-10 text-center text-sm font-bold text-slate-400">
+                최근 정산 활동이 없습니다.
               </div>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-5">
-              <h2 className="text-lg font-black text-slate-950">바로가기</h2>
-
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <button className="rounded-xl bg-slate-50 p-4 text-sm font-black text-slate-700">
-                  세금계산서
-                </button>
-                <button className="rounded-xl bg-slate-50 p-4 text-sm font-black text-slate-700">
-                  입금등록
-                </button>
-                <button className="rounded-xl bg-slate-50 p-4 text-sm font-black text-slate-700">
-                  미수금관리
-                </button>
-                <button className="rounded-xl bg-slate-50 p-4 text-sm font-black text-slate-700">
-                  정산이력
-                </button>
-              </div>
-            </section>
-          </aside>
-        </div>
-
-        <div className="rounded-xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm font-bold text-blue-700">
-          정산 데이터는 납품완료 처리된 출하 건을 기준으로 자동 생성됩니다.
-        </div>
+            )}
+          </div>
+        </section>
       </div>
     </WorkspaceLayout>
   );

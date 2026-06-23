@@ -56,6 +56,17 @@ const shipmentMenus = [
   },
 ];
 
+const settlementMenus = [
+  {
+    label: "WORKSPACE",
+    href: "/workspace/partner/settlement",
+  },
+  {
+    label: "정산현황",
+    href: "/workspace/partner/settlement/items",
+  },
+];
+
 const mainMenuItemsBeforeProduction = [
   {
     label: "입찰관리",
@@ -67,14 +78,10 @@ const mainMenuItemsBeforeProduction = [
   },
 ];
 
-const mainMenuItemsAfterShipment = [
+const mainMenuItemsAfterSettlement = [
   {
     label: "문서관리",
     href: "/workspace/partner/documents",
-  },
-  {
-    label: "정산관리",
-    href: "/workspace/partner/settlement",
   },
   {
     label: "이력관리",
@@ -109,6 +116,7 @@ export default function Sidebar() {
   const [productionOpen, setProductionOpen] = useState(false);
   const [qualityOpen, setQualityOpen] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
+  const [settlementOpen, setSettlementOpen] = useState(false);
 
   useEffect(() => {
     setProjectOpen(
@@ -119,6 +127,7 @@ export default function Sidebar() {
     setProductionOpen(pathname.startsWith("/workspace/partner/production"));
     setQualityOpen(pathname.startsWith("/workspace/partner/quality"));
     setShipmentOpen(pathname.startsWith("/workspace/partner/shipment"));
+    setSettlementOpen(pathname.startsWith("/workspace/partner/settlement"));
   }, [pathname]);
 
   return (
@@ -282,7 +291,38 @@ export default function Sidebar() {
             </div>
           ) : null}
 
-          {mainMenuItemsAfterShipment.map((item) => {
+          <button
+            type="button"
+            onClick={() => setSettlementOpen(!settlementOpen)}
+            className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-slate-800"
+          >
+            정산관리
+          </button>
+
+          {settlementOpen ? (
+            <div className="mb-3 mt-1 space-y-1 pl-3">
+              {settlementMenus.map((menu) => {
+                const active = pathname === menu.href;
+
+                return (
+                  <Link
+                    key={menu.href}
+                    href={menu.href}
+                    className={[
+                      "block rounded-lg px-3 py-2 text-sm font-bold transition",
+                      active
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-100 hover:bg-slate-800 hover:text-white",
+                    ].join(" ")}
+                  >
+                    {menu.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {mainMenuItemsAfterSettlement.map((item) => {
             const active = isActivePath(pathname, item.href);
 
             return (
@@ -301,38 +341,9 @@ export default function Sidebar() {
             );
           })}
         </div>
-
-        <div className="mt-5 border-t border-slate-800 pt-4">
-          <div className="space-y-1">
-            {bottomMenuItems.map((item) => {
-              const active = isActivePath(pathname, item.href);
-
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={[
-                    "flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-bold transition",
-                    active
-                      ? "bg-blue-600 text-white"
-                      : "text-white hover:bg-slate-800",
-                  ].join(" ")}
-                >
-                  <span>{item.label}</span>
-
-                  {"badge" in item && item.badge ? (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-xs font-bold text-white">
-                      {item.badge}
-                    </span>
-                  ) : null}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
       </nav>
 
-      <div className="border-t border-slate-800 px-4 py-3">
+      <div className="border-t border-slate-800 px-4 py-4">
         <div className="rounded-lg px-2 py-2">
           <div className="text-sm font-bold text-white">DEF Tech Partner</div>
           <div className="mt-1 text-xs font-medium text-slate-200">
