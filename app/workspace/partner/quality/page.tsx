@@ -1,4 +1,19 @@
 import Link from "next/link";
+import {
+  AlertCircle,
+  Bell,
+  CalendarCheck,
+  CheckCircle2,
+  ClipboardCheck,
+  Filter,
+  RefreshCw,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  Star,
+  Timer,
+} from "lucide-react";
+
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
 import { supabase } from "@/lib/supabase";
@@ -9,31 +24,41 @@ type QualityWorkspacePageProps = {
   }>;
 };
 
-function getQcStatusLabel(status: string) {
-  if (status === "requested") return "검사 대기";
-  if (status === "waiting") return "검사 대기";
-  if (status === "in_progress") return "검사 진행중";
-  if (status === "approved") return "승인 완료";
-  if (status === "ncr") return "NCR";
+function getQcStatusLabel(status?: string | null) {
+  if (status === "requested") return "검사요청";
+  if (status === "scheduled") return "검사대기";
+  if (status === "inspecting") return "검사진행중";
+  if (status === "passed") return "승인완료";
+  if (status === "failed") return "NCR";
   if (status === "hold") return "보류";
+
+  if (status === "waiting") return "검사대기";
+  if (status === "in_progress") return "검사진행중";
+  if (status === "approved") return "승인완료";
+  if (status === "ncr") return "NCR";
+
   return status ?? "-";
 }
 
-function getQcStatusBadgeClass(status: string) {
-  if (status === "requested" || status === "waiting") {
+function getQcStatusBadgeClass(status?: string | null) {
+  if (status === "requested" || status === "scheduled" || status === "waiting") {
     return "bg-orange-50 text-orange-600";
   }
 
-  if (status === "in_progress") {
+  if (status === "inspecting" || status === "in_progress") {
     return "bg-blue-50 text-blue-600";
   }
 
-  if (status === "approved") {
+  if (status === "passed" || status === "approved") {
     return "bg-emerald-50 text-emerald-600";
   }
 
-  if (status === "ncr") {
+  if (status === "failed" || status === "ncr") {
     return "bg-red-50 text-red-600";
+  }
+
+  if (status === "hold") {
+    return "bg-slate-50 text-slate-600";
   }
 
   return "bg-slate-50 text-slate-600";
@@ -44,11 +69,43 @@ function getPercent(count: number, total: number) {
   return Math.round((count / total) * 1000) / 10;
 }
 
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+
+  return new Date(value).toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatShortDateTime(value?: string | null) {
+  if (!value) return "-";
+
+  return new Date(value).toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getProgressColor(label: string) {
+  if (label === "검사대기") return "bg-orange-500";
+  if (label === "검사진행중") return "bg-blue-600";
+  if (label === "승인완료") return "bg-emerald-500";
+  if (label === "NCR") return "bg-red-500";
+  return "bg-slate-400";
+}
+
 export default async function QualityWorkspacePage({
   searchParams,
 }: QualityWorkspacePageProps) {
   const params = await searchParams;
-  const selectedProjectCode = params?.project;
+  const selectedProjectCode =
+    params?.project === "all" ? undefined : params?.project;
 
   const { data: projects, error: projectError } = await supabase
     .from("projects")
@@ -58,7 +115,7 @@ export default async function QualityWorkspacePage({
   if (projectError) {
     return (
       <WorkspaceLayout>
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">
           프로젝트 데이터를 불러오지 못했습니다.
         </div>
       </WorkspaceLayout>
@@ -69,13 +126,18 @@ export default async function QualityWorkspacePage({
     selectedProjectCode &&
     projects?.some((project) => project.project_code === selectedProjectCode)
       ? projects.find((project) => project.project_code === selectedProjectCode)
-      : projects?.[0];
+      : null;
 
-  const { data: bomItems, error: bomError } = await supabase
+  let bomQuery = supabase
     .from("bom_items")
     .select("*")
-    .eq("project_id", selectedProject?.id ?? "")
     .order("part_number", { ascending: true });
+
+  if (selectedProject?.id) {
+    bomQuery = bomQuery.eq("project_id", selectedProject.id);
+  }
+
+  const { data: bomItems, error: bomError } = await bomQuery;
 
   const bomIds = bomItems?.map((item) => item.id) ?? [];
 
@@ -95,18 +157,23 @@ export default async function QualityWorkspacePage({
         .order("created_at", { ascending: false })
     : { data: [], error: null };
 
-  const { data: activityLogs } = await supabase
+  let activityQuery = supabase
     .from("activity_logs")
     .select("*")
-    .eq("project_id", selectedProject?.id ?? "")
     .eq("target_type", "qc")
     .order("created_at", { ascending: false })
-    .limit(5);
+    .limit(8);
+
+  if (selectedProject?.id) {
+    activityQuery = activityQuery.eq("project_id", selectedProject.id);
+  }
+
+  const { data: activityLogs } = await activityQuery;
 
   if (bomError || qcError || ncrError) {
     return (
       <WorkspaceLayout>
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">
           품질 데이터를 불러오지 못했습니다.
         </div>
       </WorkspaceLayout>
@@ -123,19 +190,29 @@ export default async function QualityWorkspacePage({
 
   const waitingCount =
     qcRequests?.filter(
-      (item) => item.qc_status === "requested" || item.qc_status === "waiting"
+      (item) =>
+        item.qc_status === "requested" ||
+        item.qc_status === "scheduled" ||
+        item.qc_status === "waiting"
     ).length ?? 0;
 
-  const inProgressCount =
-    qcRequests?.filter((item) => item.qc_status === "in_progress").length ?? 0;
+  const inspectingCount =
+    qcRequests?.filter(
+      (item) =>
+        item.qc_status === "inspecting" || item.qc_status === "in_progress"
+    ).length ?? 0;
 
-  const approvedCount =
-    qcRequests?.filter((item) => item.qc_status === "approved").length ?? 0;
+  const passedCount =
+    qcRequests?.filter(
+      (item) => item.qc_status === "passed" || item.qc_status === "approved"
+    ).length ?? 0;
 
-  const ncrStatusCount =
-    qcRequests?.filter((item) => item.qc_status === "ncr").length ?? 0;
+  const failedStatusCount =
+    qcRequests?.filter(
+      (item) => item.qc_status === "failed" || item.qc_status === "ncr"
+    ).length ?? 0;
 
-  const ncrCount = Math.max(ncrReports?.length ?? 0, ncrStatusCount);
+  const ncrCount = Math.max(ncrReports?.length ?? 0, failedStatusCount);
 
   const priorityCount =
     qcRequests?.filter((item) => item.priority === true).length ?? 0;
@@ -153,36 +230,22 @@ export default async function QualityWorkspacePage({
       return (
         inspectionDate < today &&
         (item.qc_status === "requested" ||
+          item.qc_status === "scheduled" ||
           item.qc_status === "waiting" ||
+          item.qc_status === "inspecting" ||
           item.qc_status === "in_progress")
       );
     }).length ?? 0;
 
   const progressRows = [
-    {
-      label: "검사 대기",
-      count: waitingCount,
-      color: "bg-orange-500",
-    },
-    {
-      label: "검사 진행중",
-      count: inProgressCount,
-      color: "bg-blue-600",
-    },
-    {
-      label: "승인 완료",
-      count: approvedCount,
-      color: "bg-emerald-500",
-    },
-    {
-      label: "NCR",
-      count: ncrCount,
-      color: "bg-red-500",
-    },
+    { label: "검사대기", count: waitingCount },
+    { label: "검사진행중", count: inspectingCount },
+    { label: "승인완료", count: passedCount },
+    { label: "NCR", count: ncrCount },
   ];
 
   const recentInspectionRows =
-    qcRequests?.slice(0, 5).map((request) => {
+    qcRequests?.map((request) => {
       const bom = bomMap.get(String(request.bom_item_id));
 
       return {
@@ -192,13 +255,14 @@ export default async function QualityWorkspacePage({
         drawing_no: bom?.drawing_no ?? "-",
         status: request.qc_status,
         status_label: getQcStatusLabel(request.qc_status),
-        inspection_date: request.inspection_date ?? "-",
+        inspection_date:
+          request.inspection_date ?? request.created_at ?? request.requested_at ?? "-",
         memo: request.memo ?? "-",
       };
     }) ?? [];
 
-  const instructionRows = [
-    ...((activityLogs ?? []).map((log) => {
+  const instructionRows =
+    activityLogs?.map((log) => {
       const bom = log.bom_item_id ? bomMap.get(String(log.bom_item_id)) : null;
 
       return {
@@ -209,262 +273,373 @@ export default async function QualityWorkspacePage({
         status: "진행중",
         created_at: log.created_at ?? "-",
       };
-    }) ?? []),
-  ].slice(0, 5);
+    }) ?? [];
 
   const issueItems = [
     {
       label: "NCR 발생",
       desc: "부적합 보고서",
       count: ncrCount,
-      href: `/workspace/partner/quality/ncr?project=${
-        selectedProject?.project_code ?? ""
+      href: `/workspace/partner/quality/ncr${
+        selectedProject?.project_code ? `?project=${selectedProject.project_code}` : ""
       }`,
       color: "text-red-600 bg-red-50",
+      icon: AlertCircle,
     },
     {
       label: "재검 요청",
       desc: "재검토가 필요한 항목",
-      count: ncrReports?.filter((item) => item.status === "recheck").length ?? 0,
-      href: `/workspace/partner/quality/inspection?project=${
-        selectedProject?.project_code ?? ""
+      count:
+        ncrReports?.filter(
+          (item) => item.status === "recheck" || item.status === "reinspection"
+        ).length ?? 0,
+      href: `/workspace/partner/quality/inspection${
+        selectedProject?.project_code ? `?project=${selectedProject.project_code}` : ""
       }`,
       color: "text-orange-600 bg-orange-50",
+      icon: RotateCcw,
     },
     {
       label: "검사 지연",
       desc: "예정일 초과 항목",
       count: delayedCount,
-      href: `/workspace/partner/quality/inspection?project=${
-        selectedProject?.project_code ?? ""
+      href: `/workspace/partner/quality/inspection${
+        selectedProject?.project_code ? `?project=${selectedProject.project_code}` : ""
       }`,
       color: "text-blue-600 bg-blue-50",
+      icon: Timer,
     },
     {
       label: "우선 검수 요청",
       desc: "우선 검수가 필요한 항목",
       count: priorityCount,
-      href: `/workspace/partner/quality/inspection?project=${
-        selectedProject?.project_code ?? ""
+      href: `/workspace/partner/quality/inspection${
+        selectedProject?.project_code ? `?project=${selectedProject.project_code}` : ""
       }`,
       color: "text-purple-600 bg-purple-50",
+      icon: Star,
     },
   ];
 
+  const lastUpdated = activityLogs?.[0]?.created_at
+    ? formatShortDateTime(activityLogs[0].created_at)
+    : "실시간 데이터 기준";
+
+  const projectQuery = selectedProject?.project_code
+    ? `?project=${selectedProject.project_code}`
+    : "";
+
   return (
     <WorkspaceLayout>
-      <div className="space-y-5">
-        <div className="flex items-start justify-between gap-6">
+      <style>{`
+        .g1-scroll-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        .g1-scroll-hide::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      `}</style>
+
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-black text-slate-950">
-              품질관리 WORKSPACE
-            </h1>
-            <p className="mt-2 text-sm font-medium text-slate-500">
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">
+                품질관리 WORKSPACE
+              </h1>
+
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-700">
+                <ShieldCheck size={18} />
+              </div>
+            </div>
+
+            <p className="mt-1 text-sm font-semibold text-slate-500">
               프로젝트 품질 현황을 한눈에 확인하고 관리합니다.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-              프로젝트명, PO번호, 고객사 검색
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-[300px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-400 shadow-sm">
+                <span>프로젝트명, PO번호, 고객사 검색</span>
+                <Search className="ml-auto text-slate-500" size={16} />
+              </div>
+
+              <button className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-sm">
+                <Filter size={15} />
+                필터
+              </button>
+
+              <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-white text-slate-900 shadow-sm ring-1 ring-slate-200">
+                <Bell size={16} />
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white">
+                  {issueItems.length}
+                </span>
+              </div>
             </div>
 
-            <button className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">
-              필터
-            </button>
-
-            <div className="text-right text-xs font-semibold text-slate-500">
-              마지막 업데이트{" "}
-              <span className="text-slate-900">실시간 데이터 기준</span>
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+              <RefreshCw size={13} />
+              마지막 업데이트
+              <span className="text-slate-950">{lastUpdated}</span>
             </div>
           </div>
         </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="grid grid-cols-[240px_repeat(5,1fr)] items-center gap-4">
-            <div>
-              <div className="text-xs font-bold text-slate-500">프로젝트</div>
-              <div className="mt-3">
-                <ProjectSelector
-                  projects={
-                    projects?.map((project) => ({
-                      id: project.project_code,
-                      name: `${project.project_code} / ${project.project_name}`,
-                    })) ?? []
-                  }
-                />
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-[260px_repeat(5,1fr)] items-center gap-0 divide-x divide-slate-100 px-4 py-3">
+            <div className="pr-4">
+              <ProjectSelector
+                projects={
+                  projects?.map((project) => ({
+                    id: project.project_code,
+                    name: `${project.project_code} / ${project.project_name}`,
+                  })) ?? []
+                }
+              />
+            </div>
+
+            <div className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 text-slate-700">
+                  <ClipboardCheck size={17} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-black text-slate-500">
+                    전체 검사 요청
+                  </div>
+                  <div className="mt-0.5 text-xl font-black text-slate-950">
+                    {totalQcCount}
+                    <span className="ml-1 text-xs font-bold text-slate-500">
+                      건
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">
-                전체 검사 요청
-              </div>
-              <div className="mt-2 text-2xl font-black text-slate-950">
-                {totalQcCount}
-                <span className="ml-1 text-sm font-bold text-slate-500">
-                  건
-                </span>
-              </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">검사 대기</div>
-              <div className="mt-2 text-2xl font-black text-orange-600">
-                {waitingCount}
-                <span className="ml-1 text-sm font-bold text-slate-500">
-                  건
-                </span>
+            <div className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-orange-50 text-orange-600">
+                  <Timer size={17} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-black text-slate-500">
+                    검사 대기
+                  </div>
+                  <div className="mt-0.5 text-xl font-black text-slate-950">
+                    {waitingCount}
+                    <span className="ml-1 text-xs font-bold text-slate-500">
+                      건
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">검사 진행중</div>
-              <div className="mt-2 text-2xl font-black text-blue-600">
-                {inProgressCount}
-                <span className="ml-1 text-sm font-bold text-slate-500">
-                  건
-                </span>
+            <div className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50 text-blue-600">
+                  <CalendarCheck size={17} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-black text-slate-500">
+                    검사 진행중
+                  </div>
+                  <div className="mt-0.5 text-xl font-black text-slate-950">
+                    {inspectingCount}
+                    <span className="ml-1 text-xs font-bold text-slate-500">
+                      건
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">승인 완료</div>
-              <div className="mt-2 text-2xl font-black text-emerald-600">
-                {approvedCount}
-                <span className="ml-1 text-sm font-bold text-slate-500">
-                  건
-                </span>
+            <div className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                  <CheckCircle2 size={17} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-black text-slate-500">
+                    승인 완료
+                  </div>
+                  <div className="mt-0.5 text-xl font-black text-slate-950">
+                    {passedCount}
+                    <span className="ml-1 text-xs font-bold text-slate-500">
+                      건
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">NCR</div>
-              <div className="mt-2 text-2xl font-black text-red-600">
-                {ncrCount}
-                <span className="ml-1 text-sm font-bold text-slate-500">
-                  건
-                </span>
+            <div className="px-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600">
+                  <AlertCircle size={17} />
+                </div>
+                <div>
+                  <div className="text-[11px] font-black text-slate-500">
+                    NCR
+                  </div>
+                  <div className="mt-0.5 text-xl font-black text-slate-950">
+                    {ncrCount}
+                    <span className="ml-1 text-xs font-bold text-slate-500">
+                      건
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
         </section>
 
-        <div className="grid grid-cols-2 gap-5">
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-950">
-                품질 진행 현황
-              </h2>
+        <div className="grid grid-cols-[3fr_2fr] gap-3">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={17} className="text-blue-600" />
+                <h2 className="text-lg font-black text-slate-950">
+                  품질 진행 현황
+                </h2>
+              </div>
 
               <Link
-                href={`/workspace/partner/quality/inspection?project=${
-                  selectedProject?.project_code ?? ""
-                }`}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
+                href={`/workspace/partner/quality/inspection${projectQuery}`}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-black text-slate-700 hover:bg-slate-50"
               >
                 전체 상태
               </Link>
             </div>
 
-            <div className="mt-6 grid grid-cols-[220px_1fr] gap-8">
-              <div className="flex h-56 w-56 items-center justify-center rounded-full border-[34px] border-emerald-500">
-                <div className="text-center">
-                  <div className="text-4xl font-black text-slate-950">
-                    {totalQcCount}
-                  </div>
-                  <div className="mt-1 text-sm font-bold text-slate-500">
-                    전체
+            <div className="grid grid-cols-[150px_1fr] gap-4 p-4">
+              <div className="flex items-center justify-center">
+                <div className="flex h-36 w-36 items-center justify-center rounded-full border-[22px] border-emerald-500">
+                  <div className="text-center">
+                    <div className="text-2xl font-black text-slate-950">
+                      {totalQcCount}
+                    </div>
+                    <div className="mt-0.5 text-xs font-bold text-slate-500">
+                      전체
+                    </div>
                   </div>
                 </div>
               </div>
 
               <div>
-                <div className="grid grid-cols-[1fr_80px_80px] border-b border-slate-200 py-3 text-sm font-black text-slate-600">
+                <div className="grid grid-cols-[1fr_60px_70px] rounded-lg bg-slate-50 px-3 py-2.5 text-[11px] font-black text-slate-500">
                   <div>상태</div>
                   <div className="text-center">건수</div>
                   <div className="text-center">비율</div>
                 </div>
 
-                {progressRows.map((item) => (
-                  <div
-                    key={item.label}
-                    className="grid grid-cols-[1fr_80px_80px] border-b border-slate-100 py-3 text-sm"
-                  >
-                    <div className="flex items-center gap-2 font-bold text-slate-800">
-                      <span className={`h-3 w-3 rounded-full ${item.color}`} />
-                      {item.label}
-                    </div>
+                <div className="divide-y divide-slate-100">
+                  {progressRows.map((item) => (
+                    <div
+                      key={item.label}
+                      className="grid grid-cols-[1fr_60px_70px] items-center px-3 py-2.5 text-xs"
+                    >
+                      <div className="flex items-center gap-2 font-black text-slate-800">
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full ${getProgressColor(
+                            item.label
+                          )}`}
+                        />
+                        {item.label}
+                      </div>
 
-                    <div className="text-center font-bold">{item.count}건</div>
+                      <div className="text-center font-black text-slate-950">
+                        {item.count}건
+                      </div>
 
-                    <div className="text-center font-bold">
-                      {getPercent(item.count, totalQcCount)}%
+                      <div className="text-center font-black text-slate-700">
+                        {getPercent(item.count, totalQcCount)}%
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <h2 className="text-xl font-black text-slate-950">
-              품질 이슈 현황
-            </h2>
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle size={17} className="text-red-500" />
+                <h2 className="text-lg font-black text-slate-950">
+                  품질 이슈 현황
+                </h2>
+              </div>
 
-            <div className="mt-5 divide-y divide-slate-100">
-              {issueItems.map((item) => (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="flex items-center gap-4 py-4 hover:bg-slate-50"
-                >
-                  <div
-                    className={`flex h-11 w-11 items-center justify-center rounded-full text-lg font-black ${item.color}`}
+              <div className="text-xs font-black text-red-500">
+                전체 {issueItems.length}건
+              </div>
+            </div>
+
+            <div className="g1-scroll-hide max-h-[245px] divide-y divide-slate-100 overflow-y-auto px-4 py-1">
+              {issueItems.map((item) => {
+                const Icon = item.icon;
+
+                return (
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className="flex items-center gap-3 py-2.5 hover:bg-slate-50"
                   >
-                    !
-                  </div>
-
-                  <div className="flex-1">
-                    <div className="font-black text-slate-950">
-                      {item.label}
+                    <div
+                      className={`flex h-9 w-9 items-center justify-center rounded-full ${item.color}`}
+                    >
+                      <Icon size={17} />
                     </div>
-                    <div className="mt-1 text-sm font-medium text-slate-500">
-                      {item.desc}
+
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-black text-slate-950">
+                        {item.label}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                        {item.desc}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="text-lg font-black text-slate-950">
-                    {item.count}건
-                  </div>
+                    <div className="text-xs font-black text-slate-950">
+                      {item.count}건
+                    </div>
 
-                  <div className="text-slate-400">›</div>
-                </Link>
-              ))}
+                    <div className="text-slate-400">›</div>
+                  </Link>
+                );
+              })}
             </div>
           </section>
         </div>
 
-        <div className="grid grid-cols-2 gap-5">
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-950">
-                최근 검사 이력
-              </h2>
+        <div className="grid grid-cols-[3fr_2fr] gap-3">
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <ClipboardCheck size={17} className="text-blue-600" />
+                <h2 className="text-lg font-black text-slate-950">
+                  최근 검사 이력
+                </h2>
+              </div>
 
               <Link
-                href={`/workspace/partner/quality/inspection?project=${
-                  selectedProject?.project_code ?? ""
-                }`}
-                className="text-sm font-black text-blue-600"
+                href={`/workspace/partner/quality/inspection${projectQuery}`}
+                className="text-xs font-black text-blue-600"
               >
                 전체 보기 →
               </Link>
             </div>
 
-            <div className="mt-5 overflow-hidden rounded-xl border border-slate-100">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black text-slate-500">
+            <div className="g1-scroll-hide max-h-[245px] overflow-y-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black text-slate-500">
                   <tr>
                     <th className="px-4 py-3">품목</th>
                     <th className="px-4 py-3">상태</th>
@@ -476,19 +651,19 @@ export default async function QualityWorkspacePage({
                 <tbody className="divide-y divide-slate-100">
                   {recentInspectionRows.length ? (
                     recentInspectionRows.map((item) => (
-                      <tr key={item.id}>
+                      <tr key={item.id} className="hover:bg-slate-50">
                         <td className="px-4 py-3">
                           <div className="font-black text-slate-950">
                             {item.part_number}
                           </div>
-                          <div className="text-xs font-medium text-slate-500">
+                          <div className="mt-0.5 text-xs font-semibold text-slate-500">
                             {item.part_name}
                           </div>
                         </td>
 
                         <td className="px-4 py-3">
                           <span
-                            className={`rounded-lg px-2 py-1 text-xs font-black ${getQcStatusBadgeClass(
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-black ${getQcStatusBadgeClass(
                               item.status
                             )}`}
                           >
@@ -497,10 +672,10 @@ export default async function QualityWorkspacePage({
                         </td>
 
                         <td className="px-4 py-3 font-bold text-slate-600">
-                          {item.inspection_date}
+                          {formatDateTime(item.inspection_date)}
                         </td>
 
-                        <td className="px-4 py-3 text-xs font-medium text-slate-500">
+                        <td className="px-4 py-3 text-xs font-semibold text-slate-500">
                           {item.memo}
                         </td>
                       </tr>
@@ -520,45 +695,46 @@ export default async function QualityWorkspacePage({
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-200 bg-white p-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-black text-slate-950">
-                품질 지시사항
-              </h2>
+          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <CalendarCheck size={17} className="text-blue-600" />
+                <h2 className="text-lg font-black text-slate-950">
+                  품질 지시사항
+                </h2>
+              </div>
 
               <Link
-                href={`/workspace/partner/logs?project=${
-                  selectedProject?.project_code ?? ""
-                }`}
-                className="text-sm font-black text-blue-600"
+                href={`/workspace/partner/logs${projectQuery}`}
+                className="text-xs font-black text-blue-600"
               >
                 전체 보기 →
               </Link>
             </div>
 
-            <div className="mt-5 divide-y divide-slate-100">
+            <div className="g1-scroll-hide max-h-[245px] divide-y divide-slate-100 overflow-y-auto px-4 py-1">
               {instructionRows.length ? (
                 instructionRows.map((item) => (
                   <div
                     key={item.id}
-                    className="flex items-center justify-between gap-4 py-4"
+                    className="flex items-center justify-between gap-4 py-2.5"
                   >
-                    <div>
-                      <div className="font-black text-slate-950">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-black text-slate-950">
                         {item.part_number} / {item.part_name}
                       </div>
-                      <div className="mt-1 text-sm font-medium text-slate-500">
+                      <div className="mt-0.5 truncate text-xs font-semibold text-slate-500">
                         {item.memo}
                       </div>
                     </div>
 
-                    <span className="rounded-lg bg-blue-50 px-3 py-1.5 text-xs font-black text-blue-600">
+                    <span className="shrink-0 rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-black text-blue-600">
                       {item.status}
                     </span>
                   </div>
                 ))
               ) : (
-                <div className="py-10 text-center text-sm font-bold text-slate-400">
+                <div className="py-8 text-center text-sm font-bold text-slate-400">
                   품질 지시사항이 없습니다.
                 </div>
               )}
@@ -566,7 +742,7 @@ export default async function QualityWorkspacePage({
           </section>
         </div>
 
-        <div className="rounded-xl border border-blue-100 bg-blue-50 px-5 py-4 text-sm font-bold text-blue-700">
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-bold text-blue-700">
           품질 검수 관련 문의사항은 품질 담당자에게 문의하여 주시기 바랍니다.
         </div>
       </div>

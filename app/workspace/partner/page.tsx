@@ -1,3 +1,12 @@
+import {
+  Bell,
+  Filter,
+  Mail,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
+
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
 import ProjectListCard from "@/components/workspace/ProjectListCard";
@@ -28,6 +37,76 @@ function getProjectStatusLabel(status: string) {
 function getPercent(count: number, total: number) {
   if (!total) return 0;
   return (count / total) * 100;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) return "-";
+
+  return new Date(value).toLocaleString("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function getDday(dueDate?: string | null) {
+  if (!dueDate) return "-";
+
+  const today = new Date();
+  const due = new Date(dueDate);
+
+  today.setHours(0, 0, 0, 0);
+  due.setHours(0, 0, 0, 0);
+
+  const diff = Math.ceil(
+    (due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  if (diff > 0) return `D-${diff}`;
+  if (diff === 0) return "D-Day";
+  return `D+${Math.abs(diff)}`;
+}
+
+function getProjectHealth(projectStatus: string, dueDate?: string | null) {
+  if (projectStatus === "hold" || projectStatus === "cancelled") return "주의";
+
+  const dday = getDday(dueDate);
+
+  if (dday.startsWith("D+")) return "지연";
+  if (dday === "D-Day") return "주의";
+
+  return "정상";
+}
+
+function translateEventCategory(category?: string | null) {
+  if (category === "production") return "생산";
+  if (category === "qc") return "품질";
+  if (category === "ncr") return "NCR";
+  if (category === "shipment") return "출하";
+  if (category === "settlement") return "정산";
+  if (category === "document") return "문서";
+  if (category === "sales") return "영업";
+  if (category === "system") return "시스템";
+  return category ?? "-";
+}
+
+function translateEventAction(action?: string | null) {
+  if (!action) return "-";
+
+  const map: Record<string, string> = {
+    qc_status_change: "품질 상태 변경",
+    qc_passed_shipment_ready: "출하 준비 생성",
+    qc_failed_to_sales: "품질 이슈 영업 공유",
+    qc_failed_to_production: "품질 이슈 생산 공유",
+    production_status_change: "생산 상태 변경",
+    shipment_status_change: "출하 상태 변경",
+    settlement_status_change: "정산 상태 변경",
+    document_uploaded: "문서 업로드",
+    document_downloaded: "문서 다운로드",
+  };
+
+  return map[action] ?? action.replaceAll("_", " ");
 }
 
 export default async function PartnerWorkspacePage({
@@ -67,10 +146,7 @@ export default async function PartnerWorkspacePage({
     return (
       <WorkspaceLayout>
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-red-700">
-          <div className="font-bold">
-            프로젝트 데이터를 불러오지 못했습니다.
-          </div>
-
+          <div className="font-bold">프로젝트 데이터를 불러오지 못했습니다.</div>
           <pre className="mt-3 whitespace-pre-wrap text-xs">
             {JSON.stringify(error, null, 2)}
           </pre>
@@ -79,9 +155,14 @@ export default async function PartnerWorkspacePage({
     );
   }
 
+  const projectCodeById = new Map<string, string>();
   const bomCountByProject = new Map<string, number>();
   const bomProjectMap = new Map<string, string>();
   const bomProcessMap = new Map<string, string>();
+
+  projects?.forEach((project) => {
+    projectCodeById.set(String(project.id), project.project_code);
+  });
 
   bomItems?.forEach((item) => {
     const projectId = String(item.project_id);
@@ -97,17 +178,14 @@ export default async function PartnerWorkspacePage({
   });
 
   productionUpdates?.forEach((update) => {
-    bomProcessMap.set(
-      String(update.bom_item_id),
-      update.process_step ?? "대기"
-    );
+    bomProcessMap.set(String(update.bom_item_id), update.process_step ?? "대기");
   });
 
   const shipmentReadyByProject = new Map<string, number>();
+  const shippedByProject = new Map<string, number>();
 
   shipments?.forEach((shipment) => {
     const projectId = bomProjectMap.get(String(shipment.bom_item_id));
-
     if (!projectId) return;
 
     if (shipment.shipment_status === "ready") {
@@ -116,11 +194,23 @@ export default async function PartnerWorkspacePage({
         (shipmentReadyByProject.get(projectId) ?? 0) + 1
       );
     }
+
+    if (
+      shipment.shipment_status === "shipped" ||
+      shipment.shipment_status === "completed"
+    ) {
+      shippedByProject.set(
+        projectId,
+        (shippedByProject.get(projectId) ?? 0) + 1
+      );
+    }
   });
 
   const allProjectRows =
     projects?.map((project) => {
       const projectId = String(project.id);
+      const bomCount = bomCountByProject.get(projectId) ?? 0;
+      const shippedCount = shippedByProject.get(projectId) ?? 0;
 
       return {
         id: project.project_code,
@@ -129,8 +219,11 @@ export default async function PartnerWorkspacePage({
         customer_name: project.customer_name ?? "-",
         industry: project.industry ?? "-",
         due_date: project.due_date ?? "-",
+        dday: getDday(project.due_date),
+        health: getProjectHealth(project.status, project.due_date),
         current_stage: getProjectStatusLabel(project.status),
-        bom_count: bomCountByProject.get(projectId) ?? 0,
+        progress_percent: getPercent(shippedCount, bomCount),
+        bom_count: bomCount,
         shipment_ready_count: shipmentReadyByProject.get(projectId) ?? 0,
         raw_status: project.status,
         status:
@@ -161,9 +254,8 @@ export default async function PartnerWorkspacePage({
   );
 
   const filteredBomItems =
-    bomItems?.filter((item) =>
-      filteredProjectIds.has(String(item.project_id))
-    ) ?? [];
+    bomItems?.filter((item) => filteredProjectIds.has(String(item.project_id))) ??
+    [];
 
   const filteredBomIds = new Set(
     filteredBomItems.map((item) => String(item.id))
@@ -175,9 +267,7 @@ export default async function PartnerWorkspacePage({
     ) ?? [];
 
   const filteredQcRequests =
-    qcRequests?.filter((qc) =>
-      filteredBomIds.has(String(qc.bom_item_id))
-    ) ?? [];
+    qcRequests?.filter((qc) => filteredBomIds.has(String(qc.bom_item_id))) ?? [];
 
   const totalBomCount = filteredBomItems.length;
 
@@ -201,8 +291,9 @@ export default async function PartnerWorkspacePage({
     if (process === "소재입고") processCounts.materialIn += 1;
     if (process === "소재검수") processCounts.materialCheck += 1;
     if (process === "가공대기") processCounts.machiningWait += 1;
-    if (process === "내부공정" || process === "외부공정")
+    if (process === "내부공정" || process === "외부공정") {
       processCounts.machining += 1;
+    }
     if (process === "가공완료") processCounts.machiningDone += 1;
     if (process === "검수요청") processCounts.qcRequested += 1;
   });
@@ -218,7 +309,10 @@ export default async function PartnerWorkspacePage({
       processCounts.shipmentReady += 1;
     }
 
-    if (shipment.shipment_status === "shipped") {
+    if (
+      shipment.shipment_status === "shipped" ||
+      shipment.shipment_status === "completed"
+    ) {
       processCounts.shipped += 1;
     }
   });
@@ -228,61 +322,61 @@ export default async function PartnerWorkspacePage({
       label: "소재준비",
       count: processCounts.waiting,
       percent: getPercent(processCounts.waiting, totalBomCount),
-      color: "bg-slate-500",
+      tone: "slate",
     },
     {
       label: "소재입고",
       count: processCounts.materialIn,
       percent: getPercent(processCounts.materialIn, totalBomCount),
-      color: "bg-blue-500",
+      tone: "blue",
     },
     {
       label: "소재검수",
       count: processCounts.materialCheck,
       percent: getPercent(processCounts.materialCheck, totalBomCount),
-      color: "bg-cyan-500",
+      tone: "emerald",
     },
     {
       label: "가공대기",
       count: processCounts.machiningWait,
       percent: getPercent(processCounts.machiningWait, totalBomCount),
-      color: "bg-indigo-500",
+      tone: "amber",
     },
     {
       label: "가공중",
       count: processCounts.machining,
       percent: getPercent(processCounts.machining, totalBomCount),
-      color: "bg-orange-500",
+      tone: "green",
     },
     {
       label: "가공완료",
       count: processCounts.machiningDone,
       percent: getPercent(processCounts.machiningDone, totalBomCount),
-      color: "bg-emerald-500",
+      tone: "cyan",
     },
     {
       label: "검수요청",
       count: processCounts.qcRequested,
       percent: getPercent(processCounts.qcRequested, totalBomCount),
-      color: "bg-purple-500",
+      tone: "indigo",
     },
     {
       label: "품질검수",
       count: processCounts.qcInspecting,
       percent: getPercent(processCounts.qcInspecting, totalBomCount),
-      color: "bg-pink-500",
+      tone: "blue",
     },
     {
       label: "출하준비",
       count: processCounts.shipmentReady,
       percent: getPercent(processCounts.shipmentReady, totalBomCount),
-      color: "bg-yellow-500",
+      tone: "violet",
     },
     {
       label: "출하",
       count: processCounts.shipped,
       percent: getPercent(processCounts.shipped, totalBomCount),
-      color: "bg-green-600",
+      tone: "purple",
     },
   ];
 
@@ -290,47 +384,77 @@ export default async function PartnerWorkspacePage({
     activityLogs
       ?.filter((log) => {
         if (!selectedProjectCode) return true;
-
         return filteredProjectIds.has(String(log.project_id));
       })
       .map((log) => ({
-        time: log.created_at
-          ? new Date(log.created_at).toLocaleString("ko-KR")
-          : "-",
-        category: log.target_type ?? "-",
-        event: log.action ?? "-",
-        target: log.bom_item_id ? String(log.bom_item_id).slice(0, 8) : "-",
+        time: formatDateTime(log.created_at),
+        category: translateEventCategory(log.target_type),
+        event: translateEventAction(log.action),
+        target: `${projectCodeById.get(String(log.project_id)) ?? "-"} / ${
+          log.bom_item_id ? String(log.bom_item_id).slice(0, 8) : "-"
+        }`,
         owner: "시스템",
       })) ?? [];
 
+  const lastUpdated = activityLogs?.[0]?.created_at
+    ? formatDateTime(activityLogs[0].created_at)
+    : "-";
+
   return (
     <WorkspaceLayout>
-      <div className="space-y-5">
-        <div className="flex items-center justify-between">
+      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-5">
           <div>
-            <h1 className="text-2xl font-black text-slate-950">
-              진행중인 프로젝트
-            </h1>
-            <p className="mt-1 text-sm font-medium text-slate-500">
-              프로젝트별 제조 진행 현황과 주요 운영 이벤트를 확인합니다.
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">
+                진행중인 프로젝트
+              </h1>
+
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-700">
+                <ShieldCheck size={18} />
+              </div>
+            </div>
+
+            <p className="mt-2 text-sm font-semibold text-slate-500">
+              현재 진행 중인 프로젝트의 납기, 품질, 출하 현황을 한눈에 확인할 수 있습니다.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-              검색
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-10 w-[300px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-400 shadow-sm">
+                <span>프로젝트명, 품목, 고객사 검색</span>
+                <Search className="ml-auto text-slate-500" size={17} />
+              </div>
+
+              <button className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-sm">
+                <Filter size={16} />
+                필터
+              </button>
+
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-900 shadow-sm ring-1 ring-slate-200">
+                <Bell size={17} />
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white">
+                  3
+                </span>
+              </div>
+
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-900 shadow-sm ring-1 ring-slate-200">
+                <Mail size={17} />
+                <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-black text-white">
+                  2
+                </span>
+              </div>
+
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-xs font-black text-white shadow-sm">
+                DT
+              </div>
             </div>
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-              필터
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600">
-              알림
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-600">
-              메일
-            </div>
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-sm font-black text-white">
-              DT
+
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+              <RefreshCw size={13} />
+              마지막 업데이트
+              <span className="text-slate-950">{lastUpdated}</span>
             </div>
           </div>
         </div>
@@ -342,19 +466,18 @@ export default async function PartnerWorkspacePage({
           }))}
         />
 
-        <div className="grid grid-cols-[1fr_380px] gap-5">
+        <div className="grid grid-cols-[1fr_380px] gap-4">
           <ProjectListCard
-  projects={projectRows}
-  allProjects={allProjectRows}
-  selectedProjectCode={selectedProjectCode}
-/>
+            projects={projectRows}
+            allProjects={allProjectRows}
+            selectedProjectCode={selectedProjectCode}
+          />
 
           <ProductionSummaryCard items={productionSummaryItems} />
         </div>
 
-        <div className="grid grid-cols-[1fr_380px] gap-5">
+        <div className="grid grid-cols-[1fr_380px] gap-4">
           <RecentEventsCard events={recentEvents} />
-
           <QuickMenuCard />
         </div>
       </div>

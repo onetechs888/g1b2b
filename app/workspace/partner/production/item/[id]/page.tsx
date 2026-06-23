@@ -155,30 +155,62 @@ export default function ProductionItemDetailPage() {
       created_at: new Date().toISOString(),
     });
 
-    if (selectedProcess === "검수요청") {
-      const { data: existingQc } = await supabase
-        .from("qc_requests")
-        .select("id")
-        .eq("bom_item_id", bomItem.id)
-        .maybeSingle();
+    const { data: existingQc } = await supabase
+      .from("qc_requests")
+      .select("id, qc_status")
+      .eq("bom_item_id", bomItem.id)
+      .maybeSingle();
 
-      if (!existingQc) {
+    if (selectedProcess === "검수요청") {
+      if (existingQc?.id) {
+        await supabase
+          .from("qc_requests")
+          .update({
+            qc_status: "requested",
+            is_active: true,
+            memo: "생산관리에서 검수요청 재이관",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", existingQc.id);
+      } else {
         await supabase.from("qc_requests").insert({
           bom_item_id: bomItem.id,
           qc_status: "requested",
+          is_active: true,
           priority: false,
-          memo: "생산관리에서 검수요청 자동 생성",
-        });
-
-        await supabase.from("activity_logs").insert({
-          project_id: bomItem.project_id,
-          bom_item_id: bomItem.id,
-          target_type: "qc",
-          action: "production_qc_requested",
-          memo: "생산관리 검수요청으로 QC 요청 자동 생성",
+          memo: "생산관리에서 최초 검수요청",
           created_at: new Date().toISOString(),
         });
       }
+
+      await supabase.from("activity_logs").insert({
+        project_id: bomItem.project_id,
+        bom_item_id: bomItem.id,
+        target_type: "qc",
+        action: existingQc?.id ? "qc_re_requested" : "qc_requested",
+        memo: existingQc?.id
+          ? "기존 QC 요청 재활성화: 생산관리 검수요청 재이관"
+          : "생산 공정 검수요청 → 품질관리 최초 이관",
+        created_at: new Date().toISOString(),
+      });
+    } else if (existingQc?.id) {
+      await supabase
+        .from("qc_requests")
+        .update({
+          is_active: false,
+          memo: `생산관리로 회수: ${selectedProcess}`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingQc.id);
+
+      await supabase.from("activity_logs").insert({
+        project_id: bomItem.project_id,
+        bom_item_id: bomItem.id,
+        target_type: "qc",
+        action: "qc_deactivated",
+        memo: `검수요청 해제. 생산 공정으로 회수: ${selectedProcess}`,
+        created_at: new Date().toISOString(),
+      });
     }
 
     setSaving(false);
@@ -217,9 +249,7 @@ export default function ProductionItemDetailPage() {
       <div className="space-y-6">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <h1 className="text-2xl font-black text-slate-950">
-              공정 변경
-            </h1>
+            <h1 className="text-2xl font-black text-slate-950">공정 변경</h1>
             <p className="mt-2 text-sm font-medium text-slate-500">
               BOM 품목 기준으로 생산 공정을 변경합니다.
             </p>
