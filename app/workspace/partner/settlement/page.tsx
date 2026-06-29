@@ -22,30 +22,31 @@ function getNumber(value: unknown) {
   return Number.isFinite(numberValue) ? numberValue : 0;
 }
 
+function normalizeSettlementStatus(status: string) {
+  if (status === "shipment_completed") return "pending";
+  if (status === "completed") return "paid";
+  return status ?? "pending";
+}
+
 function getSettlementStatusLabel(status: string) {
-  if (status === "pending") return "정산대기";
-  if (status === "not_ready") return "정산대기";
-  if (status === "invoiced") return "청구완료";
-  if (status === "scheduled") return "입금예정";
-  if (status === "paid") return "입금완료";
-  if (status === "completed") return "정산완료";
-  if (status === "hold") return "보류";
-  return status ?? "-";
+  const normalized = normalizeSettlementStatus(status);
+
+  if (normalized === "pending") return "정산대기";
+  if (normalized === "invoiced") return "청구완료";
+  if (normalized === "scheduled") return "입금예정";
+  if (normalized === "paid") return "입금완료";
+  if (normalized === "hold") return "보류";
+  return normalized ?? "-";
 }
 
 function getSettlementStatusBadgeClass(status: string) {
-  if (status === "pending" || status === "not_ready") {
-    return "bg-slate-100 text-slate-700";
-  }
+  const normalized = normalizeSettlementStatus(status);
 
-  if (status === "invoiced") return "bg-blue-50 text-blue-600";
-  if (status === "scheduled") return "bg-cyan-50 text-cyan-600";
-
-  if (status === "paid" || status === "completed") {
-    return "bg-emerald-50 text-emerald-600";
-  }
-
-  if (status === "hold") return "bg-orange-50 text-orange-600";
+  if (normalized === "pending") return "bg-slate-100 text-slate-700";
+  if (normalized === "invoiced") return "bg-blue-50 text-blue-600";
+  if (normalized === "scheduled") return "bg-cyan-50 text-cyan-600";
+  if (normalized === "paid") return "bg-emerald-50 text-emerald-600";
+  if (normalized === "hold") return "bg-orange-50 text-orange-600";
 
   return "bg-slate-50 text-slate-600";
 }
@@ -55,6 +56,7 @@ export default async function SettlementWorkspacePage({
 }: SettlementWorkspacePageProps) {
   const params = await searchParams;
   const selectedProjectCode = params?.project;
+  const isAllProjects = !selectedProjectCode || selectedProjectCode === "all";
 
   const { data: projects, error: projectError } = await supabase
     .from("projects")
@@ -72,16 +74,21 @@ export default async function SettlementWorkspacePage({
   }
 
   const selectedProject =
-    selectedProjectCode &&
+    !isAllProjects &&
     projects?.some((project) => project.project_code === selectedProjectCode)
       ? projects.find((project) => project.project_code === selectedProjectCode)
-      : projects?.[0];
+      : null;
 
-  const { data: bomItems, error: bomError } = await supabase
+  let bomQuery = supabase
     .from("bom_items")
     .select("*")
-    .eq("project_id", selectedProject?.id ?? "")
     .order("part_number", { ascending: true });
+
+  if (!isAllProjects && selectedProject?.id) {
+    bomQuery = bomQuery.eq("project_id", selectedProject.id);
+  }
+
+  const { data: bomItems, error: bomError } = await bomQuery;
 
   const bomIds = bomItems?.map((item) => item.id) ?? [];
 
@@ -90,24 +97,32 @@ export default async function SettlementWorkspacePage({
         .from("shipments")
         .select("*")
         .in("bom_item_id", bomIds)
+        .eq("shipment_status", "completed")
         .order("created_at", { ascending: false })
     : { data: [], error: null };
 
-  const { data: settlements, error: settlementError } = bomIds.length
+  const shipmentIds = shipments?.map((shipment) => shipment.id) ?? [];
+
+  const { data: settlements, error: settlementError } = shipmentIds.length
     ? await supabase
         .from("settlements")
         .select("*")
-        .in("bom_item_id", bomIds)
+        .in("shipment_id", shipmentIds)
         .order("created_at", { ascending: false })
     : { data: [], error: null };
 
-  const { data: activityLogs } = await supabase
+  let activityLogQuery = supabase
     .from("activity_logs")
     .select("*")
-    .eq("project_id", selectedProject?.id ?? "")
     .eq("target_type", "settlement")
     .order("created_at", { ascending: false })
     .limit(5);
+
+  if (!isAllProjects && selectedProject?.id) {
+    activityLogQuery = activityLogQuery.eq("project_id", selectedProject.id);
+  }
+
+  const { data: activityLogs } = await activityLogQuery;
 
   if (bomError || shipmentError || settlementError) {
     return (
@@ -119,77 +134,50 @@ export default async function SettlementWorkspacePage({
     );
   }
 
-  const shipmentMap = new Map<string, any[]>();
-
-  shipments?.forEach((shipment) => {
-    const key = String(shipment.bom_item_id);
-    shipmentMap.set(key, [...(shipmentMap.get(key) ?? []), shipment]);
+  const bomMap = new Map<string, any>();
+  bomItems?.forEach((item) => {
+    bomMap.set(String(item.id), item);
   });
 
-  const settlementMap = new Map<string, any[]>();
-
+  const settlementMap = new Map<string, any>();
   settlements?.forEach((settlement) => {
-    const key = String(settlement.bom_item_id);
-    settlementMap.set(key, [...(settlementMap.get(key) ?? []), settlement]);
+    settlementMap.set(String(settlement.shipment_id), settlement);
   });
 
-  const rows =
-    bomItems?.map((item) => {
-      const bomId = String(item.id);
-      const quantity = getNumber(item.quantity);
-      const unitPrice = getNumber(item.unit_price);
+  const settlementTargetRows =
+    shipments?.map((shipment) => {
+      const bom = bomMap.get(String(shipment.bom_item_id));
+      const settlement = settlementMap.get(String(shipment.id));
+
+      const quantity = getNumber(bom?.quantity);
+      const unitPrice = getNumber(bom?.unit_price);
       const supplyAmount = quantity * unitPrice;
       const vatAmount = Math.round(supplyAmount * 0.1);
       const totalAmount = supplyAmount + vatAmount;
 
-      const itemShipments = shipmentMap.get(bomId) ?? [];
-      const itemSettlements = settlementMap.get(bomId) ?? [];
+      const rawStatus =
+        settlement?.status ??
+        settlement?.settlement_status ??
+        "pending";
 
-      const shipped = itemShipments.some(
-        (shipment) =>
-          shipment.shipment_status === "completed" ||
-          shipment.shipment_status === "shipped" ||
-          shipment.status === "completed" ||
-          shipment.status === "shipped"
-      );
+      const settlementStatus = normalizeSettlementStatus(rawStatus);
 
-      const paidAmount = itemSettlements.reduce((sum, settlement) => {
-        const amount =
-          getNumber(settlement.paid_amount) ||
-          getNumber(settlement.payment_amount) ||
-          getNumber(settlement.amount) ||
-          getNumber(settlement.total_amount);
-
-        const status = settlement.status ?? settlement.settlement_status;
-
-        if (
-          status === "paid" ||
-          status === "completed" ||
-          settlement.paid_at ||
-          settlement.payment_date
-        ) {
-          return sum + amount;
-        }
-
-        return sum;
-      }, 0);
-
-      const latestSettlement = itemSettlements[0];
-
-      const settlementStatus =
-        latestSettlement?.status ??
-        latestSettlement?.settlement_status ??
-        (paidAmount >= totalAmount && totalAmount > 0
-          ? "paid"
-          : shipped
-            ? "pending"
-            : "not_ready");
+      const paidAmount =
+        getNumber(settlement?.paid_amount) ||
+        getNumber(settlement?.payment_amount) ||
+        (settlementStatus === "paid"
+          ? getNumber(settlement?.total_amount) || totalAmount
+          : 0);
 
       return {
-        id: item.id,
-        part_number: item.part_number ?? "-",
-        part_name: item.part_name ?? "-",
-        drawing_no: item.drawing_no ?? "-",
+        id: shipment.id,
+        project_id: bom?.project_id ?? null,
+        bom_item_id: shipment.bom_item_id,
+        shipment_id: shipment.id,
+        settlement_id: settlement?.id ?? null,
+        part_number: bom?.part_number ?? "-",
+        part_name: bom?.part_name ?? "-",
+        drawing_no: bom?.drawing_no ?? "-",
         quantity,
         unit_price: unitPrice,
         supply_amount: supplyAmount,
@@ -197,65 +185,65 @@ export default async function SettlementWorkspacePage({
         total_amount: totalAmount,
         paid_amount: paidAmount,
         receivable_amount: Math.max(totalAmount - paidAmount, 0),
-        shipped,
         settlement_status: settlementStatus,
-        shipment_date:
-          itemShipments[0]?.shipped_at ??
-          itemShipments[0]?.shipment_date ??
-          itemShipments[0]?.created_at ??
-          "-",
+        shipment_date: shipment.shipment_date ?? shipment.created_at ?? "-",
       };
     }) ?? [];
 
-  const settlementTargetRows = rows.filter((row) => row.shipped);
-
-  const totalContractAmount = rows.reduce(
-    (sum, row) => sum + row.total_amount,
-    0
-  );
+  const totalContractAmount =
+    bomItems?.reduce((sum, item) => {
+      return sum + getNumber(item.quantity) * getNumber(item.unit_price) * 1.1;
+    }, 0) ?? 0;
 
   const totalBillingAmount = settlementTargetRows.reduce(
     (sum, row) => sum + row.total_amount,
     0
   );
 
-  const pendingAmount = settlementTargetRows
-    .filter(
-      (row) =>
-        row.settlement_status === "pending" ||
-        row.settlement_status === "not_ready"
-    )
-    .reduce((sum, row) => sum + row.total_amount, 0);
+  const pendingRows = settlementTargetRows.filter(
+    (row) => row.settlement_status === "pending"
+  );
 
-  const totalPaidAmount = rows.reduce((sum, row) => sum + row.paid_amount, 0);
+  const invoicedRows = settlementTargetRows.filter(
+    (row) => row.settlement_status === "invoiced"
+  );
+
+  const scheduledRows = settlementTargetRows.filter(
+    (row) => row.settlement_status === "scheduled"
+  );
+
+  const paidRows = settlementTargetRows.filter(
+    (row) => row.settlement_status === "paid"
+  );
+
+  const holdRows = settlementTargetRows.filter(
+    (row) => row.settlement_status === "hold"
+  );
+
+  const pendingCount = pendingRows.length;
+  const invoicedCount = invoicedRows.length;
+  const scheduledCount = scheduledRows.length;
+  const paidCount = paidRows.length;
+  const holdCount = holdRows.length;
+
+  const pendingAmount = pendingRows.reduce(
+    (sum, row) => sum + row.total_amount,
+    0
+  );
+
+  const totalPaidAmount = paidRows.reduce(
+    (sum, row) => sum + row.paid_amount,
+    0
+  );
 
   const totalReceivableAmount = settlementTargetRows
     .filter(
       (row) =>
-        row.settlement_status === "invoiced" ||
-        row.settlement_status === "scheduled"
+        row.receivable_amount > 0 &&
+        (row.settlement_status === "invoiced" ||
+          row.settlement_status === "scheduled")
     )
     .reduce((sum, row) => sum + row.receivable_amount, 0);
-
-  const paidCount = settlementTargetRows.filter(
-    (row) =>
-      row.settlement_status === "paid" ||
-      row.settlement_status === "completed"
-  ).length;
-
-  const pendingCount = settlementTargetRows.filter(
-    (row) =>
-      row.settlement_status === "pending" ||
-      row.settlement_status === "not_ready"
-  ).length;
-
-  const invoicedCount = settlementTargetRows.filter(
-    (row) => row.settlement_status === "invoiced"
-  ).length;
-
-  const scheduledCount = settlementTargetRows.filter(
-    (row) => row.settlement_status === "scheduled"
-  ).length;
 
   const completionRate = settlementTargetRows.length
     ? Math.round((paidCount / settlementTargetRows.length) * 100)
@@ -278,7 +266,12 @@ export default async function SettlementWorkspacePage({
     { label: "청구완료", count: invoicedCount, color: "bg-blue-600" },
     { label: "입금예정", count: scheduledCount, color: "bg-cyan-500" },
     { label: "입금완료", count: paidCount, color: "bg-emerald-500" },
+    { label: "보류", count: holdCount, color: "bg-orange-500" },
   ];
+
+  const settlementItemsHref = `/workspace/partner/settlement/items?project=${
+    isAllProjects ? "all" : selectedProject?.project_code ?? "all"
+  }`;
 
   return (
     <WorkspaceLayout>
@@ -289,8 +282,7 @@ export default async function SettlementWorkspacePage({
               정산관리 WORKSPACE
             </h1>
             <p className="mt-2 text-sm font-medium text-slate-500">
-              프로젝트 기준 정산 현황을 확인하고, BOM 기준 정산 대상을
-              관리합니다.
+              출하완료 품목 기준으로 현재 정산 대상을 관리합니다.
             </p>
           </div>
 
@@ -314,12 +306,13 @@ export default async function SettlementWorkspacePage({
 
               <div className="mt-3">
                 <ProjectSelector
-                  projects={
-                    projects?.map((project) => ({
+                  projects={[
+                    { id: "all", name: "전체 프로젝트" },
+                    ...(projects?.map((project) => ({
                       id: project.project_code,
                       name: `${project.project_code} / ${project.project_name}`,
-                    })) ?? []
-                  }
+                    })) ?? []),
+                  ]}
                 />
               </div>
             </div>
@@ -348,6 +341,9 @@ export default async function SettlementWorkspacePage({
               </div>
               <div className="mt-2 text-xl font-black text-orange-600">
                 {formatMoney(pendingAmount)}
+              </div>
+              <div className="mt-1 text-xs font-bold text-slate-400">
+                {pendingCount}건
               </div>
             </div>
 
@@ -386,9 +382,7 @@ export default async function SettlementWorkspacePage({
               </h2>
 
               <Link
-                href={`/workspace/partner/settlement/items?project=${
-                  selectedProject?.project_code ?? ""
-                }`}
+                href={settlementItemsHref}
                 className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-black text-slate-700 hover:bg-slate-50"
               >
                 정산대상관리
@@ -485,9 +479,7 @@ export default async function SettlementWorkspacePage({
             </h2>
 
             <Link
-              href={`/workspace/partner/settlement/items?project=${
-                selectedProject?.project_code ?? ""
-              }`}
+              href={settlementItemsHref}
               className="text-sm font-black text-blue-600"
             >
               전체 보기 →

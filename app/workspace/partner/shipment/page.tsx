@@ -10,26 +10,32 @@ type ShipmentPageProps = {
 };
 
 function getShipmentStatusLabel(status: string) {
-  if (status === "ready") return "출하준비";
-  if (status === "partial_shipped") return "부분출하";
-  if (status === "shipped") return "출하완료";
-  if (status === "delivered") return "납품완료";
-  if (status === "completed") return "정산완료";
+  if (status === "ready") return "출하대기";
+  if (status === "shipped") return "출하준비";
+  if (status === "completed") return "완료";
+  if (status === "partial_shipped") return "출하준비";
+  if (status === "delivered") return "완료";
   return status ?? "-";
 }
 
 function getShipmentStatusBadgeClass(status: string) {
   if (status === "ready") return "bg-orange-50 text-orange-600";
+  if (status === "shipped") return "bg-blue-50 text-blue-600";
+  if (status === "completed") return "bg-emerald-50 text-emerald-600";
   if (status === "partial_shipped") return "bg-blue-50 text-blue-600";
-  if (status === "shipped") return "bg-indigo-50 text-indigo-600";
   if (status === "delivered") return "bg-emerald-50 text-emerald-600";
-  if (status === "completed") return "bg-slate-100 text-slate-700";
   return "bg-slate-50 text-slate-600";
 }
 
 function getPercent(count: number, total: number) {
   if (!total) return 0;
   return Math.round((count / total) * 1000) / 10;
+}
+
+function normalizeShipmentStatus(status: string) {
+  if (status === "partial_shipped") return "shipped";
+  if (status === "delivered") return "completed";
+  return status;
 }
 
 export default async function ShipmentWorkspacePage({
@@ -53,17 +59,25 @@ export default async function ShipmentWorkspacePage({
     );
   }
 
-  const selectedProject =
-    selectedProjectCode &&
-    projects?.some((project) => project.project_code === selectedProjectCode)
-      ? projects.find((project) => project.project_code === selectedProjectCode)
-      : projects?.[0];
+  const isAllProjects =
+  !selectedProjectCode || selectedProjectCode === "all";
 
-  const { data: bomItems, error: bomError } = await supabase
-    .from("bom_items")
-    .select("*")
-    .eq("project_id", selectedProject?.id ?? "")
-    .order("part_number", { ascending: true });
+const selectedProject =
+  !isAllProjects &&
+  projects?.some((project) => project.project_code === selectedProjectCode)
+    ? projects.find((project) => project.project_code === selectedProjectCode)
+    : null;
+
+  let bomQuery = supabase
+  .from("bom_items")
+  .select("*")
+  .order("part_number", { ascending: true });
+
+if (!isAllProjects && selectedProject?.id) {
+  bomQuery = bomQuery.eq("project_id", selectedProject.id);
+}
+
+const { data: bomItems, error: bomError } = await bomQuery;
 
   const bomIds = bomItems?.map((item) => item.id) ?? [];
 
@@ -111,7 +125,8 @@ export default async function ShipmentWorkspacePage({
     passedBomIds.map((bomId, index) => {
       const bom = bomMap.get(String(bomId));
       const shipment = shipmentMap.get(String(bomId));
-      const status = shipment?.shipment_status ?? "ready";
+      const rawStatus = shipment?.shipment_status ?? "ready";
+      const status = normalizeShipmentStatus(rawStatus);
 
       return {
         no: index + 1,
@@ -124,7 +139,6 @@ export default async function ShipmentWorkspacePage({
         unit: bom?.unit ?? "",
         shipped_quantity: shipment?.shipped_quantity ?? 0,
         shipment_type: shipment?.shipment_type ?? "-",
-        tracking_number: shipment?.tracking_number ?? "-",
         shipment_status: status,
         shipment_date: shipment?.shipment_date ?? "-",
         updated_at: shipment?.updated_at ?? shipment?.created_at ?? "-",
@@ -132,47 +146,35 @@ export default async function ShipmentWorkspacePage({
     }) ?? [];
 
   const totalCount = shipmentRows.length;
-  const readyCount = shipmentRows.filter(
+
+  const waitingCount = shipmentRows.filter(
     (item) => item.shipment_status === "ready"
   ).length;
-  const partialCount = shipmentRows.filter(
-    (item) => item.shipment_status === "partial_shipped"
-  ).length;
-  const shippedCount = shipmentRows.filter(
+
+  const preparingCount = shipmentRows.filter(
     (item) => item.shipment_status === "shipped"
   ).length;
-  const deliveredCount = shipmentRows.filter(
-    (item) => item.shipment_status === "delivered"
-  ).length;
+
   const completedCount = shipmentRows.filter(
     (item) => item.shipment_status === "completed"
   ).length;
 
-  const shippedOrMoreCount = shippedCount + deliveredCount + completedCount;
-  const progressPercent = getPercent(shippedOrMoreCount, totalCount);
+  const progressPercent = getPercent(completedCount, totalCount);
 
   const progressRows = [
-    { label: "출하준비", count: readyCount, color: "bg-orange-500" },
-    { label: "부분출하", count: partialCount, color: "bg-blue-500" },
-    { label: "출하완료", count: shippedCount, color: "bg-indigo-500" },
-    { label: "납품완료", count: deliveredCount, color: "bg-emerald-500" },
-    { label: "정산완료", count: completedCount, color: "bg-slate-500" },
+    { label: "출하대기", count: waitingCount, color: "bg-orange-500" },
+    { label: "출하준비", count: preparingCount, color: "bg-blue-500" },
+    { label: "완료", count: completedCount, color: "bg-emerald-500" },
   ];
 
   const recentCompletedRows = shipmentRows
-    .filter(
-      (item) =>
-        item.shipment_status === "shipped" ||
-        item.shipment_status === "delivered" ||
-        item.shipment_status === "completed"
-    )
+    .filter((item) => item.shipment_status === "completed")
     .slice(0, 5);
 
   const upcomingRows = shipmentRows
     .filter(
       (item) =>
-        item.shipment_status === "ready" ||
-        item.shipment_status === "partial_shipped"
+        item.shipment_status === "ready" || item.shipment_status === "shipped"
     )
     .slice(0, 5);
 
@@ -185,7 +187,7 @@ export default async function ShipmentWorkspacePage({
               출하관리 WORKSPACE
             </h1>
             <p className="mt-2 text-sm font-medium text-slate-500">
-              선택한 프로젝트의 출하 현황을 한눈에 확인합니다.
+              출하대기, 출하준비, 완료 상태를 BOM 기준으로 관리합니다.
             </p>
           </div>
 
@@ -201,63 +203,68 @@ export default async function ShipmentWorkspacePage({
         </div>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="grid grid-cols-[240px_repeat(5,1fr)] items-center gap-4">
+          <div className="grid grid-cols-[240px_repeat(4,1fr)] items-center gap-4">
             <div>
               <div className="text-xs font-bold text-slate-500">
                 프로젝트 (PO)
               </div>
               <div className="mt-3">
                 <ProjectSelector
-                  projects={
-                    projects?.map((project) => ({
-                      id: project.project_code,
-                      name: `${project.project_code} / ${project.project_name}`,
-                    })) ?? []
-                  }
-                />
+  projects={[
+    { id: "all", name: "전체 프로젝트" },
+    ...(projects?.map((project) => ({
+      id: project.project_code,
+      name: `${project.project_code} / ${project.project_name}`,
+    })) ?? []),
+  ]}
+/>
+              </div>
+            </div>
+
+            <div className="border-l border-slate-200 pl-5">
+              <div className="text-xs font-bold text-slate-500">출하대기</div>
+              <div className="mt-1 text-[11px] font-bold text-slate-400">
+                가공 및 검수완료
+              </div>
+              <div className="mt-2 text-2xl font-black text-orange-600">
+                {waitingCount}
+                <span className="ml-1 text-sm text-slate-500">건</span>
               </div>
             </div>
 
             <div className="border-l border-slate-200 pl-5">
               <div className="text-xs font-bold text-slate-500">출하준비</div>
-              <div className="mt-2 text-2xl font-black text-orange-600">
-                {readyCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
+              <div className="mt-1 text-[11px] font-bold text-slate-400">
+                포장완료
               </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">부분출하</div>
               <div className="mt-2 text-2xl font-black text-blue-600">
-                {partialCount}
+                {preparingCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
               </div>
             </div>
 
             <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">출하완료</div>
-              <div className="mt-2 text-2xl font-black text-indigo-600">
-                {shippedCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
+              <div className="text-xs font-bold text-slate-500">완료</div>
+              <div className="mt-1 text-[11px] font-bold text-slate-400">
+                납품 및 거래명세서 송부
               </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">납품완료</div>
               <div className="mt-2 text-2xl font-black text-emerald-600">
-                {deliveredCount}
+                {completedCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
               </div>
             </div>
 
             <div className="border-l border-slate-200 pl-5">
               <div className="text-xs font-bold text-slate-500">전체 대상</div>
+              <div className="mt-1 text-[11px] font-bold text-slate-400">
+                QC 승인 완료 품목
+              </div>
               <div className="mt-2 text-2xl font-black text-slate-950">
                 {totalCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
               </div>
               <div className="mt-1 text-xs font-bold text-blue-600">
-                전체 진행률 {progressPercent}%
+                완료율 {progressPercent}%
               </div>
             </div>
           </div>
@@ -270,7 +277,7 @@ export default async function ShipmentWorkspacePage({
                 출하 현황 목록
               </h2>
               <p className="mt-1 text-xs font-bold text-slate-500">
-                QC 승인 완료 품목 기준
+                QC 승인 완료 품목 기준 / BOM 단위 출하 관리
               </p>
             </div>
 
@@ -291,7 +298,7 @@ export default async function ShipmentWorkspacePage({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1000px] text-left text-sm">
               <thead className="bg-slate-50 text-xs font-black text-slate-500">
                 <tr>
                   <th className="px-4 py-3">No.</th>
@@ -301,8 +308,8 @@ export default async function ShipmentWorkspacePage({
                   <th className="px-4 py-3">수량</th>
                   <th className="px-4 py-3">출하수량</th>
                   <th className="px-4 py-3">현재 상태</th>
-                  <th className="px-4 py-3">송장번호</th>
                   <th className="px-4 py-3">출하일</th>
+                  <th className="px-4 py-3">최근 업데이트</th>
                   <th className="px-4 py-3">관리</th>
                 </tr>
               </thead>
@@ -345,12 +352,14 @@ export default async function ShipmentWorkspacePage({
                         </span>
                       </td>
 
-                      <td className="px-4 py-3 font-medium text-slate-600">
-                        {row.tracking_number}
-                      </td>
-
                       <td className="px-4 py-3 font-bold text-slate-600">
                         {row.shipment_date}
+                      </td>
+
+                      <td className="px-4 py-3 font-medium text-slate-600">
+                        {row.updated_at === "-"
+                          ? "-"
+                          : String(row.updated_at).slice(0, 10)}
                       </td>
 
                       <td className="px-4 py-3">
@@ -384,7 +393,7 @@ export default async function ShipmentWorkspacePage({
           <section className="rounded-2xl border border-slate-200 bg-white p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-950">
-                최근 출하완료
+                최근 완료
               </h2>
               <Link
                 href={`/workspace/partner/shipment/history?project=${
@@ -418,7 +427,7 @@ export default async function ShipmentWorkspacePage({
                 ))
               ) : (
                 <div className="py-10 text-center text-sm font-bold text-slate-400">
-                  출하완료 이력이 없습니다.
+                  완료 이력이 없습니다.
                 </div>
               )}
             </div>
@@ -427,7 +436,7 @@ export default async function ShipmentWorkspacePage({
           <section className="rounded-2xl border border-slate-200 bg-white p-6">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-black text-slate-950">
-                출하 예정 품목
+                출하 진행 품목
               </h2>
               <Link
                 href={`/workspace/partner/shipment/items?project=${
@@ -465,7 +474,7 @@ export default async function ShipmentWorkspacePage({
                 ))
               ) : (
                 <div className="py-10 text-center text-sm font-bold text-slate-400">
-                  출하 예정 품목이 없습니다.
+                  출하 진행 품목이 없습니다.
                 </div>
               )}
             </div>
@@ -483,7 +492,7 @@ export default async function ShipmentWorkspacePage({
                     {progressPercent}%
                   </div>
                   <div className="text-xs font-bold text-slate-500">
-                    진행률
+                    완료율
                   </div>
                 </div>
               </div>
