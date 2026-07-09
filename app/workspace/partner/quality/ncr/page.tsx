@@ -59,8 +59,12 @@ export default function NcrManagementPage() {
 
       const currentProject =
         selectedProjectCode &&
-        projectData?.some((project) => project.project_code === selectedProjectCode)
-          ? projectData.find((project) => project.project_code === selectedProjectCode)
+        projectData?.some(
+          (project) => project.project_code === selectedProjectCode
+        )
+          ? projectData.find(
+              (project) => project.project_code === selectedProjectCode
+            )
           : projectData?.[0];
 
       setProjects(projectData ?? []);
@@ -150,9 +154,15 @@ export default function NcrManagementPage() {
   }, [rows, selectedRowId]);
 
   const totalCount = rows.length;
-  const registeredCount = rows.filter((row) => row.status === "registered").length;
-  const inActionCount = rows.filter((row) => row.status === "in_action").length;
-  const reinspectionCount = rows.filter((row) => row.status === "reinspection").length;
+  const registeredCount = rows.filter(
+    (row) => row.status === "registered"
+  ).length;
+  const inActionCount = rows.filter(
+    (row) => row.status === "in_action"
+  ).length;
+  const reinspectionCount = rows.filter(
+    (row) => row.status === "reinspection"
+  ).length;
   const closedCount = rows.filter((row) => row.status === "closed").length;
   const rejectedCount = rows.filter((row) => row.status === "rejected").length;
 
@@ -169,6 +179,7 @@ export default function NcrManagementPage() {
 
     setSaving(true);
 
+    const now = new Date().toISOString();
     const previousStatus = selectedRow.status;
     const nextStatus = status;
 
@@ -179,8 +190,8 @@ export default function NcrManagementPage() {
         root_cause: rootCause,
         corrective_action: correctiveAction,
         preventive_action: preventiveAction,
-        closed_at: nextStatus === "closed" ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString(),
+        closed_at: nextStatus === "closed" ? now : null,
+        updated_at: now,
       })
       .eq("id", selectedRow.id);
 
@@ -200,7 +211,7 @@ export default function NcrManagementPage() {
       before_value: previousStatus,
       after_value: nextStatus,
       memo: `NCR 상태 변경: ${previousStatus} → ${nextStatus}`,
-      created_at: new Date().toISOString(),
+      created_at: now,
     });
 
     if (nextStatus === "reinspection") {
@@ -208,8 +219,9 @@ export default function NcrManagementPage() {
         .from("qc_requests")
         .update({
           qc_status: "scheduled",
+          is_active: true,
           memo: "NCR 조치 후 재검사 요청",
-          updated_at: new Date().toISOString(),
+          updated_at: now,
         })
         .eq("id", selectedRow.qc_request_id);
 
@@ -222,8 +234,60 @@ export default function NcrManagementPage() {
         before_value: "failed",
         after_value: "scheduled",
         memo: "NCR 조치 후 재검사 요청",
-        created_at: new Date().toISOString(),
+        created_at: now,
       });
+    }
+
+    if (nextStatus === "closed") {
+      await supabase
+        .from("qc_requests")
+        .update({
+          qc_status: "passed",
+          is_active: true,
+          memo: "NCR 종결에 따른 품질 승인",
+          updated_at: now,
+        })
+        .eq("id", selectedRow.qc_request_id);
+
+      await supabase.from("activity_logs").insert({
+        project_id: selectedRow.project_id,
+        bom_item_id: selectedRow.bom_item_id,
+        target_type: "qc",
+        target_id: selectedRow.qc_request_id,
+        action: "ncr_closed_qc_passed",
+        before_value: "failed",
+        after_value: "passed",
+        memo: "NCR 종결 처리로 QC 승인 상태 전환",
+        created_at: now,
+      });
+
+      const { data: existingShipment } = await supabase
+        .from("shipments")
+        .select("id")
+        .eq("bom_item_id", selectedRow.bom_item_id)
+        .maybeSingle();
+
+      if (!existingShipment) {
+        await supabase.from("shipments").insert({
+          project_id: selectedRow.project_id,
+          bom_item_id: selectedRow.bom_item_id,
+          status: "ready",
+          created_at: now,
+          updated_at: now,
+        });
+
+        await supabase.from("activity_logs").insert({
+          project_id: selectedRow.project_id,
+          bom_item_id: selectedRow.bom_item_id,
+          target_type: "shipment",
+          target_id: selectedRow.bom_item_id,
+          action: "shipment_auto_created",
+          before_value: null,
+          after_value: "ready",
+          memo: "NCR 종결 및 QC 승인에 따른 출하 자동 생성",
+          created_at: now,
+        });
+      }
     }
 
     setRows((prev) =>
@@ -235,7 +299,7 @@ export default function NcrManagementPage() {
               root_cause: rootCause,
               corrective_action: correctiveAction,
               preventive_action: preventiveAction,
-              closed_at: nextStatus === "closed" ? new Date().toISOString() : null,
+              closed_at: nextStatus === "closed" ? now : null,
             }
           : row
       )
@@ -480,22 +544,30 @@ export default function NcrManagementPage() {
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-slate-500">품목 코드</span>
-                        <span className="font-bold">{selectedRow.part_number}</span>
+                        <span className="font-bold">
+                          {selectedRow.part_number}
+                        </span>
                       </div>
 
                       <div className="flex justify-between">
                         <span className="text-slate-500">품목명</span>
-                        <span className="font-bold">{selectedRow.part_name}</span>
+                        <span className="font-bold">
+                          {selectedRow.part_name}
+                        </span>
                       </div>
 
                       <div className="flex justify-between">
                         <span className="text-slate-500">도면 번호</span>
-                        <span className="font-bold">{selectedRow.drawing_no}</span>
+                        <span className="font-bold">
+                          {selectedRow.drawing_no}
+                        </span>
                       </div>
 
                       <div className="flex justify-between">
                         <span className="text-slate-500">소재</span>
-                        <span className="font-bold">{selectedRow.material}</span>
+                        <span className="font-bold">
+                          {selectedRow.material}
+                        </span>
                       </div>
 
                       <div className="flex justify-between">

@@ -133,6 +133,7 @@ export default function QualityInspectionPage() {
             .from("qc_requests")
             .select("*")
             .in("bom_item_id", bomIds)
+            .eq("is_active", true)
             .order("created_at", { ascending: false })
         : { data: [] };
 
@@ -865,10 +866,7 @@ export default function QualityInspectionPage() {
                                   <div className="space-y-3">
                                     <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-3">
                                       <div className="flex items-center gap-2">
-                                        <FileText
-                                          size={16}
-                                          className="text-red-500"
-                                        />
+                                        <FileText size={16} className="text-red-500" />
                                         <div>
                                           <div className="text-xs font-black text-slate-800">
                                             검사성적서_{row.part_number}.pdf

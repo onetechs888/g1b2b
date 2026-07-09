@@ -142,12 +142,13 @@ export default async function QualityWorkspacePage({
   const bomIds = bomItems?.map((item) => item.id) ?? [];
 
   const { data: qcRequests, error: qcError } = bomIds.length
-    ? await supabase
-        .from("qc_requests")
-        .select("*")
-        .in("bom_item_id", bomIds)
-        .order("created_at", { ascending: false })
-    : { data: [], error: null };
+  ? await supabase
+      .from("qc_requests")
+      .select("*")
+      .in("bom_item_id", bomIds)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false })
+  : { data: [], error: null };
 
   const { data: ncrReports, error: ncrError } = bomIds.length
     ? await supabase

@@ -3,6 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  Bell,
+  ClipboardCheck,
+  Factory,
+  FileText,
+  FolderKanban,
+  Gavel,
+  History,
+  LogOut,
+  ReceiptText,
+  Settings,
+  ShoppingCart,
+  Truck,
+} from "lucide-react";
 
 const projectMenus = [
   {
@@ -71,10 +85,12 @@ const mainMenuItemsBeforeProduction = [
   {
     label: "입찰관리",
     href: "/workspace/partner/bids",
+    icon: Gavel,
   },
   {
     label: "발주관리",
     href: "/workspace/partner/orders",
+    icon: ShoppingCart,
   },
 ];
 
@@ -82,10 +98,12 @@ const mainMenuItemsAfterSettlement = [
   {
     label: "문서관리",
     href: "/workspace/partner/documents",
+    icon: FileText,
   },
   {
     label: "이력관리",
     href: "/workspace/partner/logs",
+    icon: History,
   },
 ];
 
@@ -94,10 +112,12 @@ const bottomMenuItems = [
     label: "알림",
     href: "/workspace/partner/notifications",
     badge: 6,
+    icon: Bell,
   },
   {
     label: "설정",
     href: "/workspace/partner/settings",
+    icon: Settings,
   },
 ];
 
@@ -152,7 +172,10 @@ export default function Sidebar() {
           onClick={() => setProjectOpen(!projectOpen)}
           className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-slate-800"
         >
-          프로젝트
+          <div className="flex items-center gap-2">
+            <FolderKanban size={16} />
+            <span>프로젝트</span>
+          </div>
         </button>
 
         {projectOpen ? (
@@ -181,6 +204,7 @@ export default function Sidebar() {
         <div className="space-y-1">
           {mainMenuItemsBeforeProduction.map((item) => {
             const active = isActivePath(pathname, item.href);
+            const Icon = item.icon;
 
             return (
               <Link
@@ -193,7 +217,10 @@ export default function Sidebar() {
                     : "text-white hover:bg-slate-800",
                 ].join(" ")}
               >
-                {item.label}
+                <div className="flex items-center gap-2">
+                  <Icon size={16} />
+                  <span>{item.label}</span>
+                </div>
               </Link>
             );
           })}
@@ -203,7 +230,10 @@ export default function Sidebar() {
             onClick={() => setProductionOpen(!productionOpen)}
             className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-slate-800"
           >
-            생산관리
+            <div className="flex items-center gap-2">
+              <Factory size={16} />
+              <span>생산관리</span>
+            </div>
           </button>
 
           {productionOpen ? (
@@ -234,7 +264,10 @@ export default function Sidebar() {
             onClick={() => setQualityOpen(!qualityOpen)}
             className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-slate-800"
           >
-            품질관리
+            <div className="flex items-center gap-2">
+              <ClipboardCheck size={16} />
+              <span>품질관리</span>
+            </div>
           </button>
 
           {qualityOpen ? (
@@ -265,7 +298,10 @@ export default function Sidebar() {
             onClick={() => setShipmentOpen(!shipmentOpen)}
             className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-slate-800"
           >
-            출하관리
+            <div className="flex items-center gap-2">
+              <Truck size={16} />
+              <span>출하관리</span>
+            </div>
           </button>
 
           {shipmentOpen ? (
@@ -296,7 +332,10 @@ export default function Sidebar() {
             onClick={() => setSettlementOpen(!settlementOpen)}
             className="w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold text-white transition hover:bg-slate-800"
           >
-            정산관리
+            <div className="flex items-center gap-2">
+              <ReceiptText size={16} />
+              <span>정산관리</span>
+            </div>
           </button>
 
           {settlementOpen ? (
@@ -324,6 +363,7 @@ export default function Sidebar() {
 
           {mainMenuItemsAfterSettlement.map((item) => {
             const active = isActivePath(pathname, item.href);
+            const Icon = item.icon;
 
             return (
               <Link
@@ -336,7 +376,10 @@ export default function Sidebar() {
                     : "text-white hover:bg-slate-800",
                 ].join(" ")}
               >
-                {item.label}
+                <div className="flex items-center gap-2">
+                  <Icon size={16} />
+                  <span>{item.label}</span>
+                </div>
               </Link>
             );
           })}
@@ -351,12 +394,44 @@ export default function Sidebar() {
           </div>
         </div>
 
-        <Link
-          href="/login"
-          className="mt-2 block rounded-lg px-3 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
-        >
-          로그아웃
-        </Link>
+        <div className="mt-2 space-y-1">
+          {bottomMenuItems.map((item) => {
+            const active = isActivePath(pathname, item.href);
+            const Icon = item.icon;
+
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={[
+                  "flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-bold transition",
+                  active
+                    ? "bg-blue-600 text-white"
+                    : "text-white hover:bg-slate-800",
+                ].join(" ")}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon size={16} />
+                  <span>{item.label}</span>
+                </div>
+
+                {item.badge ? (
+                  <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1.5 text-[11px] font-black text-white">
+                    {item.badge}
+                  </span>
+                ) : null}
+              </Link>
+            );
+          })}
+
+          <Link
+            href="/login"
+            className="flex items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800"
+          >
+            <LogOut size={16} />
+            <span>로그아웃</span>
+          </Link>
+        </div>
       </div>
     </aside>
   );
