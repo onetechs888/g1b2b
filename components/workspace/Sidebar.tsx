@@ -29,6 +29,17 @@ const projectMenus = [
   },
 ];
 
+const biddingMenus = [
+  {
+    label: "입찰목록",
+    href: "/workspace/partner/bids",
+  },
+  {
+    label: "견적목록",
+    href: "/workspace/partner/bids/quotes",
+  },
+];
+
 const productionMenus = [
   {
     label: "Workspace",
@@ -83,11 +94,6 @@ const settlementMenus = [
 
 const mainMenuItemsBeforeProduction = [
   {
-    label: "입찰관리",
-    href: "/workspace/partner/bids",
-    icon: Gavel,
-  },
-  {
     label: "발주관리",
     href: "/workspace/partner/orders",
     icon: ShoppingCart,
@@ -133,6 +139,7 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const [projectOpen, setProjectOpen] = useState(false);
+  const [biddingOpen, setBiddingOpen] = useState(false);
   const [productionOpen, setProductionOpen] = useState(false);
   const [qualityOpen, setQualityOpen] = useState(false);
   const [shipmentOpen, setShipmentOpen] = useState(false);
@@ -144,6 +151,7 @@ export default function Sidebar() {
         pathname.startsWith("/workspace/partner/completed")
     );
 
+    setBiddingOpen(pathname.startsWith("/workspace/partner/bids"));
     setProductionOpen(pathname.startsWith("/workspace/partner/production"));
     setQualityOpen(pathname.startsWith("/workspace/partner/quality"));
     setShipmentOpen(pathname.startsWith("/workspace/partner/shipment"));
@@ -202,6 +210,45 @@ export default function Sidebar() {
         ) : null}
 
         <div className="space-y-1">
+          <button
+            type="button"
+            onClick={() => setBiddingOpen(!biddingOpen)}
+            className={[
+              "w-full rounded-lg px-3 py-2.5 text-left text-sm font-bold transition",
+              pathname.startsWith("/workspace/partner/bids")
+                ? "bg-blue-600 text-white"
+                : "text-white hover:bg-slate-800",
+            ].join(" ")}
+          >
+            <div className="flex items-center gap-2">
+              <Gavel size={16} />
+              <span>입찰관리</span>
+            </div>
+          </button>
+
+          {biddingOpen ? (
+            <div className="mb-3 mt-1 space-y-1 pl-3">
+              {biddingMenus.map((menu) => {
+                const active = pathname === menu.href;
+
+                return (
+                  <Link
+                    key={menu.href}
+                    href={menu.href}
+                    className={[
+                      "block rounded-lg px-3 py-2 text-sm font-bold transition",
+                      active
+                        ? "bg-blue-600 text-white"
+                        : "text-slate-100 hover:bg-slate-800 hover:text-white",
+                    ].join(" ")}
+                  >
+                    {menu.label}
+                  </Link>
+                );
+              })}
+            </div>
+          ) : null}
+
           {mainMenuItemsBeforeProduction.map((item) => {
             const active = isActivePath(pathname, item.href);
             const Icon = item.icon;

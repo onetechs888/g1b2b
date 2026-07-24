@@ -95,6 +95,35 @@ export type PartnerQuote = {
 };
 
 /**
+ * 파트너 견적목록에서 사용하는 견적 정보입니다.
+ *
+ * 현재 로그인한 파트너 회사가 작성한
+ * 견적 Header, RFQ, 고객사, 견적 품목 집계정보를 제공합니다.
+ */
+export type PartnerQuoteListItem = {
+  id: string;
+  bidding_request_id: string;
+
+  project_id: string | null;
+  project_name: string;
+
+  customer_company_id: string | null;
+  customer_company_name: string;
+
+  status: PartnerQuoteStatus;
+  memo: string | null;
+
+  bom_count: number;
+  total_amount: number;
+
+  rfq_due_date: string | null;
+
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/**
  * 견적 임시저장 시 사용하는 품목 입력값입니다.
  */
 export type SavePartnerQuoteItemInput = {
@@ -132,6 +161,17 @@ type BiddingRequestRow = {
   memo: string | null;
   customer_company_id: string | null;
   created_at: string;
+};
+
+/**
+ * 파트너 견적목록에서 RFQ 기본정보를 조회할 때 사용하는 Row 타입입니다.
+ */
+type PartnerQuoteRequestRow = {
+  id: string;
+  project_id: string | null;
+  project_name: string;
+  customer_company_id: string | null;
+  due_date: string | null;
 };
 
 type CompanyRow = {
@@ -185,6 +225,15 @@ type BiddingQuoteItemRow = {
   memo: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/**
+ * 파트너 견적목록에서
+ * 품목 수와 총 견적금액을 계산할 때 사용하는 Row 타입입니다.
+ */
+type PartnerQuoteListItemRow = {
+  quote_id: string;
+  total_price: number | null;
 };
 
 /**
@@ -587,6 +636,302 @@ export async function getOpenBiddingRequests(): Promise<
         ) ?? 0,
     }),
   );
+}
+
+/**
+ * 현재 로그인한 파트너 회사가 작성한
+ * 전체 견적목록을 조회합니다.
+ *
+ * 조회 순서:
+ * 1. 현재 파트너 회사 확인
+ * 2. bidding_quotes 조회
+ * 3. bidding_requests 조회
+ * 4. companies에서 고객사명 조회
+ * 5. bidding_quote_items에서 품목 수와 총액 집계
+ */
+export async function getPartnerQuoteList(): Promise<
+  PartnerQuoteListItem[]
+> {
+  const partnerContext =
+    await getPartnerContext();
+
+  /**
+   * 1. 현재 파트너 회사가 작성한 견적 Header 조회
+   */
+  const {
+    data: quoteData,
+    error: quoteError,
+  } = await supabase
+    .from("bidding_quotes")
+    .select(`
+      id,
+      bidding_request_id,
+      partner_company_id,
+      created_by,
+      status,
+      memo,
+      submitted_at,
+      created_at,
+      updated_at
+    `)
+    .eq(
+      "partner_company_id",
+      partnerContext.companyId,
+    )
+    .in("status", [
+      "submitted",
+      "waiting",
+      "awarded",
+      "rejected",
+    ])
+    .order("updated_at", {
+      ascending: false,
+    });
+
+  if (quoteError) {
+    throw new Error(
+      quoteError.message,
+    );
+  }
+
+  const quotes =
+    (quoteData ??
+      []) as BiddingQuoteRow[];
+
+  if (quotes.length === 0) {
+    return [];
+  }
+
+  /**
+   * 중복 조회를 방지하기 위해
+   * RFQ ID와 견적 ID를 각각 정리합니다.
+   */
+  const biddingRequestIds =
+    Array.from(
+      new Set(
+        quotes.map(
+          (quote) =>
+            quote.bidding_request_id,
+        ),
+      ),
+    );
+
+  const quoteIds =
+    quotes.map(
+      (quote) => quote.id,
+    );
+
+  /**
+   * 2. 견적과 연결된 RFQ 정보 조회
+   */
+  const {
+    data: biddingRequestData,
+    error: biddingRequestError,
+  } = await supabase
+    .from("bidding_requests")
+    .select(`
+      id,
+      project_id,
+      project_name,
+      customer_company_id,
+      due_date
+    `)
+    .in(
+      "id",
+      biddingRequestIds,
+    );
+
+  if (biddingRequestError) {
+    throw new Error(
+      biddingRequestError.message,
+    );
+  }
+
+  const biddingRequests =
+    (biddingRequestData ??
+      []) as PartnerQuoteRequestRow[];
+
+  const biddingRequestMap =
+    new Map<
+      string,
+      PartnerQuoteRequestRow
+    >();
+
+  biddingRequests.forEach(
+    (biddingRequest) => {
+      biddingRequestMap.set(
+        biddingRequest.id,
+        biddingRequest,
+      );
+    },
+  );
+
+  /**
+   * 3. 고객사 이름 조회
+   */
+  const customerCompanyIds =
+    biddingRequests
+      .map(
+        (biddingRequest) =>
+          biddingRequest.customer_company_id,
+      )
+      .filter(
+        (
+          companyId,
+        ): companyId is string =>
+          Boolean(companyId),
+      );
+
+  const companyNameMap =
+    await getCompanyNameMap(
+      customerCompanyIds,
+    );
+
+  /**
+   * 4. 견적 품목 조회
+   *
+   * 목록에서는 품목 상세가 아니라
+   * 품목 수와 총 견적금액만 계산합니다.
+   */
+  const {
+    data: quoteItemData,
+    error: quoteItemError,
+  } = await supabase
+    .from("bidding_quote_items")
+    .select(`
+      quote_id,
+      total_price
+    `)
+    .in(
+      "quote_id",
+      quoteIds,
+    );
+
+  if (quoteItemError) {
+    throw new Error(
+      quoteItemError.message,
+    );
+  }
+
+  const quoteItems =
+    (quoteItemData ??
+      []) as PartnerQuoteListItemRow[];
+
+  /**
+   * 견적별 BOM 품목 수
+   */
+  const bomCountMap =
+    new Map<string, number>();
+
+  /**
+   * 견적별 총 견적금액
+   */
+  const totalAmountMap =
+    new Map<string, number>();
+
+  quoteItems.forEach(
+    (quoteItem) => {
+      const currentBomCount =
+        bomCountMap.get(
+          quoteItem.quote_id,
+        ) ?? 0;
+
+      bomCountMap.set(
+        quoteItem.quote_id,
+        currentBomCount + 1,
+      );
+
+      const currentTotalAmount =
+        totalAmountMap.get(
+          quoteItem.quote_id,
+        ) ?? 0;
+
+      const itemTotalPrice =
+        quoteItem.total_price === null
+          ? 0
+          : Number(
+              quoteItem.total_price,
+            );
+
+      totalAmountMap.set(
+        quoteItem.quote_id,
+        currentTotalAmount +
+          itemTotalPrice,
+      );
+    },
+  );
+
+  /**
+   * 5. 페이지에서 바로 사용할 수 있는 형태로 변환
+   */
+  return quotes.map((quote) => {
+    const biddingRequest =
+      biddingRequestMap.get(
+        quote.bidding_request_id,
+      );
+
+    const customerCompanyId =
+      biddingRequest
+        ?.customer_company_id ??
+      null;
+
+    return {
+      id: quote.id,
+
+      bidding_request_id:
+        quote.bidding_request_id,
+
+      project_id:
+        biddingRequest?.project_id ??
+        null,
+
+      project_name:
+        biddingRequest
+          ?.project_name ??
+        "프로젝트명 미확인",
+
+      customer_company_id:
+        customerCompanyId,
+
+      customer_company_name:
+        customerCompanyId
+          ? companyNameMap.get(
+              customerCompanyId,
+            ) ??
+            "고객사 미확인"
+          : "고객사 미확인",
+
+      status:
+        quote.status,
+
+      memo:
+        quote.memo,
+
+      bom_count:
+        bomCountMap.get(
+          quote.id,
+        ) ?? 0,
+
+      total_amount:
+        totalAmountMap.get(
+          quote.id,
+        ) ?? 0,
+
+      rfq_due_date:
+        biddingRequest
+          ?.due_date ??
+        null,
+
+      submitted_at:
+        quote.submitted_at,
+
+      created_at:
+        quote.created_at,
+
+      updated_at:
+        quote.updated_at,
+    };
+  });
 }
 
 /**
