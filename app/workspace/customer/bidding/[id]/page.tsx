@@ -1,0 +1,1369 @@
+"use client";
+
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { useMemo, useState } from "react";
+
+import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
+import { useCustomerQuoteComparison } from "@/hooks/customer/useCustomerQuoteComparison";
+
+import type {
+  CustomerPartnerQuote,
+  CustomerQuoteComparisonItem,
+  CustomerQuoteStatus,
+} from "@/services/customer/quoteService";
+
+/* =========================================================
+ * Types
+ * ======================================================= */
+
+type DetailTab =
+  | "vendor"
+  | "item";
+
+type QuoteStatusInfo = {
+  label: string;
+  className: string;
+};
+
+/* =========================================================
+ * Utils
+ * ======================================================= */
+
+function formatCurrency(
+  value: number | null,
+): string {
+  if (value === null) {
+    return "-";
+  }
+
+  return `₩${value.toLocaleString(
+    "ko-KR",
+  )}`;
+}
+
+function formatDate(
+  value: string | null,
+): string {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "ko-KR",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    },
+  ).format(date);
+}
+
+function formatDateTime(
+  value: string | null,
+): string {
+  if (!value) {
+    return "-";
+  }
+
+  const date = new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return "-";
+  }
+
+  return new Intl.DateTimeFormat(
+    "ko-KR",
+    {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    },
+  ).format(date);
+}
+
+function getShortCode(
+  value: string,
+): string {
+  return `BID-${value
+    .replaceAll("-", "")
+    .slice(0, 8)
+    .toUpperCase()}`;
+}
+
+function getQuoteStatusInfo(
+  status: CustomerQuoteStatus,
+): QuoteStatusInfo {
+  switch (status) {
+    case "submitted":
+      return {
+        label: "제출 완료",
+        className:
+          "bg-blue-50 text-blue-700",
+      };
+
+    case "waiting":
+      return {
+        label: "검토 중",
+        className:
+          "bg-orange-50 text-orange-700",
+      };
+
+    case "awarded":
+      return {
+        label: "선정",
+        className:
+          "bg-emerald-50 text-emerald-700",
+      };
+
+    case "rejected":
+      return {
+        label: "미선정",
+        className:
+          "bg-slate-100 text-slate-500",
+      };
+  }
+}
+
+function getPriceDifferenceRate(
+  currentAmount: number,
+  lowestAmount: number | null,
+): number | null {
+  if (
+    lowestAmount === null ||
+    lowestAmount <= 0
+  ) {
+    return null;
+  }
+
+  return (
+    ((currentAmount -
+      lowestAmount) /
+      lowestAmount) *
+    100
+  );
+}
+
+/* =========================================================
+ * Page
+ * ======================================================= */
+
+export default function CustomerBiddingDetailPage() {
+  const params = useParams();
+
+  const biddingRequestId =
+    typeof params.id === "string"
+      ? params.id
+      : "";
+
+  const {
+    comparison,
+    loading,
+    error,
+    refresh,
+  } =
+    useCustomerQuoteComparison(
+      biddingRequestId,
+    );
+
+  const [
+    activeTab,
+    setActiveTab,
+  ] =
+    useState<DetailTab>(
+      "vendor",
+    );
+
+  const [
+    selectedQuoteId,
+    setSelectedQuoteId,
+  ] =
+    useState<string | null>(
+      null,
+    );
+
+  const selectedQuote =
+    useMemo(() => {
+      if (!comparison) {
+        return null;
+      }
+
+      if (selectedQuoteId) {
+        return (
+          comparison.quotes.find(
+            (quote) =>
+              quote.id ===
+              selectedQuoteId,
+          ) ?? null
+        );
+      }
+
+      return (
+        comparison.quotes.find(
+          (quote) =>
+            quote.status ===
+            "awarded",
+        ) ??
+        comparison.quotes[0] ??
+        null
+      );
+    }, [
+      comparison,
+      selectedQuoteId,
+    ]);
+
+  const sortedQuotes =
+    useMemo(() => {
+      if (!comparison) {
+        return [];
+      }
+
+      return [
+        ...comparison.quotes,
+      ].sort(
+        (first, second) =>
+          first.total_amount -
+          second.total_amount,
+      );
+    }, [comparison]);
+
+  if (loading) {
+    return (
+      <WorkspaceLayout role="customer">
+        <div className="flex min-h-[520px] items-center justify-center bg-[#f7f9fc]">
+          <p className="text-sm font-semibold text-slate-600">
+            RFQ 견적정보를
+            불러오는 중입니다.
+          </p>
+        </div>
+      </WorkspaceLayout>
+    );
+  }
+
+  if (
+    error ||
+    !comparison
+  ) {
+    return (
+      <WorkspaceLayout role="customer">
+        <div className="flex min-h-[520px] items-center justify-center bg-[#f7f9fc] px-6">
+          <section className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 text-center shadow-sm">
+            <h1 className="text-lg font-extrabold text-red-700">
+              RFQ 정보를
+              불러오지 못했습니다.
+            </h1>
+
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              {error ??
+                "RFQ 정보를 찾을 수 없습니다."}
+            </p>
+
+            <div className="mt-5 flex justify-center gap-2">
+              <Link
+                href="/workspace/customer/bidding"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700"
+              >
+                목록으로
+              </Link>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void refresh()
+                }
+                className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-bold text-white"
+              >
+                다시 불러오기
+              </button>
+            </div>
+          </section>
+        </div>
+      </WorkspaceLayout>
+    );
+  }
+
+  const {
+    rfq,
+    quotes,
+  } = comparison;
+
+  return (
+    <WorkspaceLayout role="customer">
+      <div className="min-h-full bg-[#f7f9fc]">
+        <div className="mx-auto w-full max-w-[1760px] px-5 py-5 lg:px-7">
+          {/* =================================================
+           * Header
+           * =============================================== */}
+
+          <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 xl:flex-row xl:items-start xl:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-slate-500">
+                <Link
+                  href="/workspace/customer/bidding"
+                  className="transition hover:text-blue-700"
+                >
+                  입찰관리
+                </Link>
+
+                <span>/</span>
+
+                <span>
+                  RFQ 상세
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <h1 className="text-[26px] font-black tracking-tight text-slate-950">
+                  {rfq.project_name}
+                </h1>
+
+                <span className="rounded-md bg-slate-950 px-2.5 py-1 text-xs font-bold text-white">
+                  {getShortCode(
+                    rfq.id,
+                  )}
+                </span>
+              </div>
+
+              <p className="mt-2 text-sm text-slate-600">
+                참여업체의 견적금액,
+                납기 및 BOM 품목별
+                단가를 비교합니다.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/workspace/customer/bidding"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                ← 입찰목록
+              </Link>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void refresh()
+                }
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-blue-300 hover:text-blue-700"
+              >
+                새로고침
+              </button>
+            </div>
+          </header>
+
+          {/* =================================================
+           * RFQ Summary
+           * =============================================== */}
+
+          <section className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              label="참여 업체"
+              value={`${comparison.participant_count}개사`}
+              description={`유효 견적 ${comparison.submitted_quote_count}건`}
+            />
+
+            <SummaryCard
+              label="최저 견적"
+              value={formatCurrency(
+                comparison.lowest_total_amount,
+              )}
+              description="제출 견적 기준"
+            />
+
+            <SummaryCard
+              label="평균 견적"
+              value={formatCurrency(
+                comparison.average_total_amount,
+              )}
+              description="참여업체 평균"
+            />
+
+            <SummaryCard
+              label="최고 견적"
+              value={formatCurrency(
+                comparison.highest_total_amount,
+              )}
+              description="제출 견적 기준"
+            />
+          </section>
+
+          {/* =================================================
+           * RFQ Information
+           * =============================================== */}
+
+          <section className="mt-4 rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="border-b border-slate-200 px-5 py-4">
+              <h2 className="text-base font-extrabold text-slate-950">
+                RFQ 기본정보
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 gap-x-8 gap-y-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
+              <InfoItem
+                label="Customer"
+                value={
+                  comparison.customer_company_name
+                }
+              />
+
+              <InfoItem
+                label="입찰 마감"
+                value={formatDateTime(
+                  rfq.bid_deadline,
+                )}
+              />
+
+              <InfoItem
+                label="희망 납기"
+                value={formatDate(
+                  rfq.due_date,
+                )}
+              />
+
+              <InfoItem
+                label="최소 Partner Tier"
+                value={
+                  rfq.minimum_partner_tier ??
+                  "-"
+                }
+              />
+
+              <InfoItem
+                label="RFQ 상태"
+                value={
+                  rfq.status
+                }
+              />
+
+              <InfoItem
+                label="선정 업체"
+                value={
+                  comparison.selected_partner_company_name ??
+                  "-"
+                }
+              />
+
+              <InfoItem
+                label="Project 생성"
+                value={
+                  rfq.project_id
+                    ? "생성 완료"
+                    : "미생성"
+                }
+              />
+
+              <InfoItem
+                label="등록일"
+                value={formatDateTime(
+                  rfq.created_at,
+                )}
+              />
+            </div>
+
+            {rfq.description ||
+            rfq.memo ? (
+              <div className="grid border-t border-slate-100 md:grid-cols-2">
+                <TextInfo
+                  label="요청사항"
+                  value={
+                    rfq.description
+                  }
+                />
+
+                <TextInfo
+                  label="Customer 메모"
+                  value={
+                    rfq.memo
+                  }
+                />
+              </div>
+            ) : null}
+          </section>
+
+          {/* =================================================
+           * Tabs
+           * =============================================== */}
+
+          <section className="mt-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex border-b border-slate-200 px-5">
+              <TabButton
+                active={
+                  activeTab ===
+                  "vendor"
+                }
+                onClick={() =>
+                  setActiveTab(
+                    "vendor",
+                  )
+                }
+              >
+                업체별 견적 비교
+              </TabButton>
+
+              <TabButton
+                active={
+                  activeTab ===
+                  "item"
+                }
+                onClick={() =>
+                  setActiveTab(
+                    "item",
+                  )
+                }
+              >
+                품목별 단가 비교
+              </TabButton>
+            </div>
+
+            {activeTab ===
+            "vendor" ? (
+              <VendorComparison
+                quotes={
+                  sortedQuotes
+                }
+                lowestAmount={
+                  comparison.lowest_total_amount
+                }
+                selectedQuoteId={
+                  selectedQuote?.id ??
+                  null
+                }
+                onSelect={
+                  setSelectedQuoteId
+                }
+              />
+            ) : (
+              <ItemComparison
+                items={
+                  comparison.comparison_items
+                }
+                quotes={
+                  quotes
+                }
+              />
+            )}
+          </section>
+
+          {/* =================================================
+           * Selected Vendor Detail
+           * =============================================== */}
+
+          {selectedQuote ? (
+            <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <SelectedQuoteDetail
+                quote={
+                  selectedQuote
+                }
+              />
+
+              <SelectionPanel
+                quote={
+                  selectedQuote
+                }
+                selectedPartnerCompanyId={
+                  rfq.selected_partner_company_id
+                }
+                projectId={
+                  rfq.project_id
+                }
+              />
+            </section>
+          ) : null}
+        </div>
+      </div>
+    </WorkspaceLayout>
+  );
+}
+
+/* =========================================================
+ * Summary Card
+ * ======================================================= */
+
+function SummaryCard({
+  label,
+  value,
+  description,
+}: {
+  label: string;
+  value: string;
+  description: string;
+}) {
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <p className="text-sm font-bold text-slate-600">
+        {label}
+      </p>
+
+      <p className="mt-3 break-words text-[23px] font-black leading-tight text-slate-950">
+        {value}
+      </p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        {description}
+      </p>
+    </article>
+  );
+}
+
+/* =========================================================
+ * RFQ Info
+ * ======================================================= */
+
+function InfoItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-bold text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-1.5 text-sm font-bold text-slate-800">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function TextInfo({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null;
+}) {
+  return (
+    <div className="px-5 py-4">
+      <p className="text-xs font-bold text-slate-400">
+        {label}
+      </p>
+
+      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+        {value || "-"}
+      </p>
+    </div>
+  );
+}
+
+/* =========================================================
+ * Tabs
+ * ======================================================= */
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "border-b-2 px-1 py-4 text-sm font-extrabold transition",
+        "mr-7",
+        active
+          ? "border-blue-600 text-blue-700"
+          : "border-transparent text-slate-500 hover:text-slate-800",
+      ].join(" ")}
+    >
+      {children}
+    </button>
+  );
+}
+
+/* =========================================================
+ * 업체별 견적 비교
+ * ======================================================= */
+
+function VendorComparison({
+  quotes,
+  lowestAmount,
+  selectedQuoteId,
+  onSelect,
+}: {
+  quotes: CustomerPartnerQuote[];
+  lowestAmount: number | null;
+  selectedQuoteId: string | null;
+  onSelect: (
+    quoteId: string,
+  ) => void;
+}) {
+  if (
+    quotes.length === 0
+  ) {
+    return (
+      <EmptyState text="제출된 Partner 견적이 없습니다." />
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[1120px] border-collapse">
+        <thead>
+          <tr className="border-b border-slate-200 bg-[#f7f9fc]">
+            <TableHeader align="center">
+              선택
+            </TableHeader>
+
+            <TableHeader>
+              Partner
+            </TableHeader>
+
+            <TableHeader align="right">
+              총 견적금액
+            </TableHeader>
+
+            <TableHeader align="center">
+              최저가 대비
+            </TableHeader>
+
+            <TableHeader align="center">
+              품목 수
+            </TableHeader>
+
+            <TableHeader align="center">
+              평균 Lead Time
+            </TableHeader>
+
+            <TableHeader align="center">
+              최대 Lead Time
+            </TableHeader>
+
+            <TableHeader>
+              제안 납기
+            </TableHeader>
+
+            <TableHeader>
+              제출일
+            </TableHeader>
+
+            <TableHeader align="center">
+              상태
+            </TableHeader>
+          </tr>
+        </thead>
+
+        <tbody>
+          {quotes.map(
+            (quote) => {
+              const status =
+                getQuoteStatusInfo(
+                  quote.status,
+                );
+
+              const differenceRate =
+                getPriceDifferenceRate(
+                  quote.total_amount,
+                  lowestAmount,
+                );
+
+              const isLowest =
+                lowestAmount !==
+                  null &&
+                quote.total_amount ===
+                  lowestAmount;
+
+              const selected =
+                selectedQuoteId ===
+                quote.id;
+
+              return (
+                <tr
+                  key={quote.id}
+                  onClick={() =>
+                    onSelect(
+                      quote.id,
+                    )
+                  }
+                  className={[
+                    "cursor-pointer border-b border-slate-100 transition last:border-b-0",
+                    selected
+                      ? "bg-blue-50/60"
+                      : "hover:bg-slate-50",
+                  ].join(
+                    " ",
+                  )}
+                >
+                  <TableCell align="center">
+                    <span
+                      className={[
+                        "inline-flex h-4 w-4 rounded-full border-4",
+                        selected
+                          ? "border-blue-600 bg-white"
+                          : "border-slate-300 bg-white",
+                      ].join(
+                        " ",
+                      )}
+                    />
+                  </TableCell>
+
+                  <TableCell>
+                    <div>
+                      <p className="font-extrabold text-slate-900">
+                        {
+                          quote.partner_company_name
+                        }
+                      </p>
+
+                      {isLowest ? (
+                        <span className="mt-1 inline-flex rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700">
+                          최저 견적
+                        </span>
+                      ) : null}
+                    </div>
+                  </TableCell>
+
+                  <TableCell align="right">
+                    <span className="font-black text-slate-950">
+                      {formatCurrency(
+                        quote.total_amount,
+                      )}
+                    </span>
+                  </TableCell>
+
+                  <TableCell align="center">
+                    {isLowest ? (
+                      <span className="font-bold text-emerald-600">
+                        기준
+                      </span>
+                    ) : differenceRate !==
+                      null ? (
+                      <span className="font-bold text-orange-600">
+                        +
+                        {differenceRate.toFixed(
+                          1,
+                        )}
+                        %
+                      </span>
+                    ) : (
+                      "-"
+                    )}
+                  </TableCell>
+
+                  <TableCell align="center">
+                    {
+                      quote.item_count
+                    }
+                  </TableCell>
+
+                  <TableCell align="center">
+                    {quote.average_lead_time_days !==
+                    null
+                      ? `${quote.average_lead_time_days}일`
+                      : "-"}
+                  </TableCell>
+
+                  <TableCell align="center">
+                    {quote.max_lead_time_days !==
+                    null
+                      ? `${quote.max_lead_time_days}일`
+                      : "-"}
+                  </TableCell>
+
+                  <TableCell>
+                    {formatDate(
+                      quote.proposed_due_date,
+                    )}
+                  </TableCell>
+
+                  <TableCell>
+                    {formatDateTime(
+                      quote.submitted_at,
+                    )}
+                  </TableCell>
+
+                  <TableCell align="center">
+                    <span
+                      className={`inline-flex rounded-md px-2.5 py-1 text-xs font-bold ${status.className}`}
+                    >
+                      {
+                        status.label
+                      }
+                    </span>
+                  </TableCell>
+                </tr>
+              );
+            },
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* =========================================================
+ * 품목별 단가 비교
+ * ======================================================= */
+
+function ItemComparison({
+  items,
+  quotes,
+}: {
+  items: CustomerQuoteComparisonItem[];
+  quotes: CustomerPartnerQuote[];
+}) {
+  if (
+    items.length === 0
+  ) {
+    return (
+      <EmptyState text="비교할 견적 품목이 없습니다." />
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-max border-collapse">
+        <thead>
+          <tr className="border-b border-slate-200 bg-[#f7f9fc]">
+            <TableHeader>
+              품번
+            </TableHeader>
+
+            <TableHeader>
+              품명
+            </TableHeader>
+
+            <TableHeader>
+              도면번호
+            </TableHeader>
+
+            <TableHeader>
+              Rev
+            </TableHeader>
+
+            <TableHeader>
+              재질
+            </TableHeader>
+
+            <TableHeader align="right">
+              수량
+            </TableHeader>
+
+            {quotes.map(
+              (quote) => (
+                <TableHeader
+                  key={
+                    quote.id
+                  }
+                  align="right"
+                >
+                  {
+                    quote.partner_company_name
+                  }
+                </TableHeader>
+              ),
+            )}
+
+            <TableHeader align="right">
+              최저 단가
+            </TableHeader>
+          </tr>
+        </thead>
+
+        <tbody>
+          {items.map(
+            (item) => (
+              <tr
+                key={
+                  item.bom_item_id
+                }
+                className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
+              >
+                <TableCell>
+                  <span className="font-bold text-slate-800">
+                    {item.part_number ??
+                      "-"}
+                  </span>
+                </TableCell>
+
+                <TableCell>
+                  <p className="max-w-[220px] truncate font-bold text-slate-900">
+                    {
+                      item.part_name
+                    }
+                  </p>
+                </TableCell>
+
+                <TableCell>
+                  {item.drawing_no ??
+                    "-"}
+                </TableCell>
+
+                <TableCell>
+                  {item.revision ??
+                    "-"}
+                </TableCell>
+
+                <TableCell>
+                  {item.material ??
+                    "-"}
+                </TableCell>
+
+                <TableCell align="right">
+                  {item.quantity.toLocaleString(
+                    "ko-KR",
+                  )}{" "}
+                  {item.unit ?? ""}
+                </TableCell>
+
+                {quotes.map(
+                  (quote) => {
+                    const vendor =
+                      item.vendors.find(
+                        (
+                          currentVendor,
+                        ) =>
+                          currentVendor.quote_id ===
+                          quote.id,
+                      );
+
+                    const isLowest =
+                      vendor &&
+                      item.lowest_unit_price !==
+                        null &&
+                      vendor.unit_price ===
+                        item.lowest_unit_price;
+
+                    return (
+                      <TableCell
+                        key={
+                          quote.id
+                        }
+                        align="right"
+                      >
+                        {vendor ? (
+                          <div>
+                            <span
+                              className={[
+                                "font-extrabold",
+                                isLowest
+                                  ? "text-emerald-700"
+                                  : "text-slate-800",
+                              ].join(
+                                " ",
+                              )}
+                            >
+                              {formatCurrency(
+                                vendor.unit_price,
+                              )}
+                            </span>
+
+                            {isLowest ? (
+                              <p className="mt-1 text-[10px] font-bold text-emerald-600">
+                                최저
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
+                    );
+                  },
+                )}
+
+                <TableCell align="right">
+                  <span className="font-black text-emerald-700">
+                    {formatCurrency(
+                      item.lowest_unit_price,
+                    )}
+                  </span>
+                </TableCell>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/* =========================================================
+ * 선택 업체 상세
+ * ======================================================= */
+
+function SelectedQuoteDetail({
+  quote,
+}: {
+  quote: CustomerPartnerQuote;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-bold text-slate-400">
+            선택 견적
+          </p>
+
+          <h2 className="mt-1 text-lg font-black text-slate-950">
+            {
+              quote.partner_company_name
+            }
+          </h2>
+        </div>
+
+        <p className="text-xl font-black text-slate-950">
+          {formatCurrency(
+            quote.total_amount,
+          )}
+        </p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 border-b border-slate-100 px-5 py-4 lg:grid-cols-4">
+        <InfoItem
+          label="품목 수"
+          value={`${quote.item_count}개`}
+        />
+
+        <InfoItem
+          label="평균 Lead Time"
+          value={
+            quote.average_lead_time_days !==
+            null
+              ? `${quote.average_lead_time_days}일`
+              : "-"
+          }
+        />
+
+        <InfoItem
+          label="최대 Lead Time"
+          value={
+            quote.max_lead_time_days !==
+            null
+              ? `${quote.max_lead_time_days}일`
+              : "-"
+          }
+        />
+
+        <InfoItem
+          label="제안 납기"
+          value={formatDate(
+            quote.proposed_due_date,
+          )}
+        />
+      </div>
+
+      <div className="px-5 py-4">
+        <p className="text-xs font-bold text-slate-400">
+          Partner 견적 메모
+        </p>
+
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+          {quote.memo ||
+            "등록된 견적 메모가 없습니다."}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* =========================================================
+ * 업체 선정 패널
+ * ======================================================= */
+
+function SelectionPanel({
+  quote,
+  selectedPartnerCompanyId,
+  projectId,
+}: {
+  quote: CustomerPartnerQuote;
+  selectedPartnerCompanyId:
+    | string
+    | null;
+  projectId: string | null;
+}) {
+  const isSelected =
+    selectedPartnerCompanyId ===
+    quote.partner_company_id;
+
+  const selectionCompleted =
+    selectedPartnerCompanyId !==
+    null;
+
+  return (
+    <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <p className="text-xs font-bold text-slate-400">
+        업체 선정
+      </p>
+
+      <h2 className="mt-1 text-lg font-black text-slate-950">
+        {
+          quote.partner_company_name
+        }
+      </h2>
+
+      <div className="mt-4 rounded-lg bg-slate-50 p-4">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-500">
+            총 견적금액
+          </span>
+
+          <span className="text-sm font-black text-slate-950">
+            {formatCurrency(
+              quote.total_amount,
+            )}
+          </span>
+        </div>
+
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-xs font-semibold text-slate-500">
+            현재 상태
+          </span>
+
+          <span className="text-xs font-bold text-slate-800">
+            {
+              getQuoteStatusInfo(
+                quote.status,
+              ).label
+            }
+          </span>
+        </div>
+      </div>
+
+      {isSelected ? (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <p className="text-sm font-extrabold text-emerald-700">
+            선정 완료 업체입니다.
+          </p>
+
+          <p className="mt-1 text-xs text-emerald-700">
+            {projectId
+              ? "Project 생성까지 완료되었습니다."
+              : "Project는 아직 생성되지 않았습니다."}
+          </p>
+        </div>
+      ) : selectionCompleted ? (
+        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-sm font-bold text-slate-600">
+            다른 Partner가 이미
+            선정되었습니다.
+          </p>
+        </div>
+      ) : (
+        <>
+          <button
+            type="button"
+            disabled
+            className="mt-4 flex h-11 w-full items-center justify-center rounded-lg bg-blue-600 text-sm font-extrabold text-white opacity-50"
+          >
+            이 업체 선정
+          </button>
+
+          <button
+            type="button"
+            disabled
+            className="mt-2 flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-400"
+          >
+            견적 거절
+          </button>
+
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            업체 선정 및 거절은
+            다음 단계에서 Transaction /
+            RPC와 연결합니다.
+          </p>
+        </>
+      )}
+    </aside>
+  );
+}
+
+/* =========================================================
+ * Table
+ * ======================================================= */
+
+function TableHeader({
+  children,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  align?:
+    | "left"
+    | "center"
+    | "right";
+}) {
+  const alignClass =
+    align === "center"
+      ? "text-center"
+      : align === "right"
+        ? "text-right"
+        : "text-left";
+
+  return (
+    <th
+      className={`whitespace-nowrap px-4 py-3 text-xs font-extrabold text-slate-600 ${alignClass}`}
+    >
+      {children}
+    </th>
+  );
+}
+
+function TableCell({
+  children,
+  align = "left",
+}: {
+  children: React.ReactNode;
+  align?:
+    | "left"
+    | "center"
+    | "right";
+}) {
+  const alignClass =
+    align === "center"
+      ? "text-center"
+      : align === "right"
+        ? "text-right"
+        : "text-left";
+
+  return (
+    <td
+      className={`whitespace-nowrap px-4 py-3.5 text-sm text-slate-700 ${alignClass}`}
+    >
+      {children}
+    </td>
+  );
+}
+
+/* =========================================================
+ * Empty
+ * ======================================================= */
+
+function EmptyState({
+  text,
+}: {
+  text: string;
+}) {
+  return (
+    <div className="flex min-h-[280px] items-center justify-center px-6 py-12">
+      <div className="text-center">
+        <p className="text-sm font-bold text-slate-700">
+          {text}
+        </p>
+      </div>
+    </div>
+  );
+}
