@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import {
+  useMemo,
+  useState,
+} from "react";
 
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import { useCustomerQuoteComparison } from "@/hooks/customer/useCustomerQuoteComparison";
+import { useSelectBiddingPartner } from "@/hooks/customer/useSelectBiddingPartner";
 
 import type {
   CustomerPartnerQuote,
@@ -182,6 +186,14 @@ export default function CustomerBiddingDetailPage() {
       biddingRequestId,
     );
 
+  const {
+    selecting,
+    error: selectionError,
+    selectPartner,
+    clearError,
+  } =
+    useSelectBiddingPartner();
+
   const [
     activeTab,
     setActiveTab,
@@ -242,6 +254,61 @@ export default function CustomerBiddingDetailPage() {
           second.total_amount,
       );
     }, [comparison]);
+
+  const handleSelectPartner =
+    async (
+      quote: CustomerPartnerQuote,
+    ) => {
+      if (!comparison) {
+        return;
+      }
+
+      if (
+        comparison.rfq
+          .selected_partner_company_id
+      ) {
+        alert(
+          "이미 선정된 Partner가 존재합니다.",
+        );
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          [
+            `${quote.partner_company_name}을(를) 최종 선정하시겠습니까?`,
+            "",
+            "선정 시",
+            "- 해당 견적은 awarded 처리됩니다.",
+            "- 동일 RFQ의 다른 제출 견적은 rejected 처리됩니다.",
+            "- RFQ 상태는 awarded로 변경됩니다.",
+            "",
+            "선정 후에는 현재 단계에서 다시 변경할 수 없습니다.",
+          ].join("\n"),
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      clearError();
+
+      const result =
+        await selectPartner(
+          comparison.rfq.id,
+          quote.id,
+        );
+
+      if (!result) {
+        return;
+      }
+
+      await refresh();
+
+      alert(
+        `${quote.partner_company_name} 업체가 최종 선정되었습니다.`,
+      );
+    };
 
   if (loading) {
     return (
@@ -582,6 +649,17 @@ export default function CustomerBiddingDetailPage() {
                 projectId={
                   rfq.project_id
                 }
+                selecting={
+                  selecting
+                }
+                selectionError={
+                  selectionError
+                }
+                onSelectPartner={() =>
+                  void handleSelectPartner(
+                    selectedQuote,
+                  )
+                }
               />
             </section>
           ) : null}
@@ -683,8 +761,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={[
-        "border-b-2 px-1 py-4 text-sm font-extrabold transition",
-        "mr-7",
+        "mr-7 border-b-2 px-1 py-4 text-sm font-extrabold transition",
         active
           ? "border-blue-600 text-blue-700"
           : "border-transparent text-slate-500 hover:text-slate-800",
@@ -1189,12 +1266,18 @@ function SelectionPanel({
   quote,
   selectedPartnerCompanyId,
   projectId,
+  selecting,
+  selectionError,
+  onSelectPartner,
 }: {
   quote: CustomerPartnerQuote;
   selectedPartnerCompanyId:
     | string
     | null;
   projectId: string | null;
+  selecting: boolean;
+  selectionError: string | null;
+  onSelectPartner: () => void;
 }) {
   const isSelected =
     selectedPartnerCompanyId ===
@@ -1203,6 +1286,15 @@ function SelectionPanel({
   const selectionCompleted =
     selectedPartnerCompanyId !==
     null;
+
+  const canSelect =
+    !selectionCompleted &&
+    (
+      quote.status ===
+        "submitted" ||
+      quote.status ===
+        "waiting"
+    );
 
   return (
     <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -1244,6 +1336,14 @@ function SelectionPanel({
         </div>
       </div>
 
+      {selectionError ? (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+          <p className="text-xs font-bold leading-5 text-red-700">
+            {selectionError}
+          </p>
+        </div>
+      ) : null}
+
       {isSelected ? (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
           <p className="text-sm font-extrabold text-emerald-700">
@@ -1267,24 +1367,47 @@ function SelectionPanel({
         <>
           <button
             type="button"
-            disabled
-            className="mt-4 flex h-11 w-full items-center justify-center rounded-lg bg-blue-600 text-sm font-extrabold text-white opacity-50"
+            onClick={
+              onSelectPartner
+            }
+            disabled={
+              !canSelect ||
+              selecting
+            }
+            className={[
+              "mt-4 flex h-11 w-full items-center justify-center rounded-lg text-sm font-extrabold transition",
+              canSelect &&
+              !selecting
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "cursor-not-allowed bg-slate-200 text-slate-400",
+            ].join(
+              " ",
+            )}
           >
-            이 업체 선정
+            {selecting
+              ? "선정 처리 중..."
+              : "이 업체 선정"}
           </button>
 
           <button
             type="button"
             disabled
-            className="mt-2 flex h-10 w-full items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-400"
+            className="mt-2 flex h-10 w-full cursor-not-allowed items-center justify-center rounded-lg border border-slate-200 bg-white text-sm font-bold text-slate-400"
           >
             견적 거절
           </button>
 
           <p className="mt-3 text-xs leading-5 text-slate-500">
-            업체 선정 및 거절은
-            다음 단계에서 Transaction /
-            RPC와 연결합니다.
+            업체 선정 시 해당 견적은
+            awarded, 동일 RFQ의 다른
+            견적은 rejected로
+            처리됩니다.
+          </p>
+
+          <p className="mt-1 text-xs leading-5 text-slate-400">
+            개별 견적 거절은 별도
+            Workflow 확정 후
+            연결합니다.
           </p>
         </>
       )}

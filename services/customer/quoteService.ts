@@ -935,7 +935,7 @@ export async function getCustomerQuoteComparison(
       data: bomRows,
       error: bomError,
     } = await supabase
-      .from("bom_items")
+      .from("bidding_bom_items")
       .select(`
         id,
         part_number,
@@ -1573,4 +1573,67 @@ export async function getCustomerQuoteComparison(
     comparison_items:
       comparisonItems,
   };
+}
+
+/* =========================================================
+ * 3. Customer 업체 선정
+ * ======================================================= */
+
+export type SelectBiddingPartnerResult = {
+  success: boolean;
+
+  bidding_request_id: string;
+
+  selected_quote_id: string;
+
+  selected_partner_company_id: string;
+
+  bidding_request_status: "awarded";
+
+  selected_quote_status: "awarded";
+
+  rejected_quote_count: number;
+};
+
+export async function selectBiddingPartner(
+  biddingRequestId: string,
+  quoteId: string,
+): Promise<SelectBiddingPartnerResult> {
+  if (!biddingRequestId) {
+    throw new Error(
+      "RFQ ID가 필요합니다.",
+    );
+  }
+
+  if (!quoteId) {
+    throw new Error(
+      "선정할 견적 ID가 필요합니다.",
+    );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "select_bidding_partner",
+    {
+      p_bidding_request_id:
+        biddingRequestId,
+
+      p_quote_id:
+        quoteId,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(
+      "업체 선정 결과를 확인할 수 없습니다.",
+    );
+  }
+
+  return data as SelectBiddingPartnerResult;
 }
