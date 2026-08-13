@@ -43,6 +43,20 @@ export type CustomerProjectSummary = {
   shipment_completion_rate: number;
 };
 
+export type CustomerManufacturingStatusSummary = {
+  total_bom: number;
+  waiting: number;
+  material_in: number;
+  material_check: number;
+  machining_wait: number;
+  machining: number;
+  machining_done: number;
+  qc_requested: number;
+  qc_inspecting: number;
+  shipment_ready: number;
+  shipped: number;
+};
+
 export type CustomerProjectListItem = {
   id: string;
   project_code: string | null;
@@ -58,6 +72,7 @@ export type CustomerProjectListItem = {
   created_at: string | null;
   updated_at: string | null;
   summary: CustomerProjectSummary;
+  manufacturing_status: CustomerManufacturingStatusSummary;
   overall_progress: number;
   current_stage: CustomerProjectStageLabel;
   is_due_risk: boolean;
@@ -83,6 +98,7 @@ export type CustomerProjectActivity = {
 export type CustomerProjectDashboard = {
   projects: CustomerProjectListItem[];
   activities: CustomerProjectActivity[];
+  manufacturing_status: CustomerManufacturingStatusSummary;
   kpi: {
     total_active_projects: number;
     production_count: number;
@@ -236,6 +252,12 @@ type ActivityBomRow = {
   drawing_no: string | null;
 };
 
+type DashboardBomRow = {
+  id: string;
+  project_id: string | null;
+  process_type: string | null;
+};
+
 type BomDetailRow = {
   id: string;
   project_id: string | null;
@@ -349,6 +371,39 @@ function createEmptyProjectSummary(): CustomerProjectSummary {
     shipment_completed_count: 0,
     shipment_completion_rate: 0,
   };
+}
+
+function createEmptyManufacturingStatus(): CustomerManufacturingStatusSummary {
+  return {
+    total_bom: 0,
+    waiting: 0,
+    material_in: 0,
+    material_check: 0,
+    machining_wait: 0,
+    machining: 0,
+    machining_done: 0,
+    qc_requested: 0,
+    qc_inspecting: 0,
+    shipment_ready: 0,
+    shipped: 0,
+  };
+}
+
+function addManufacturingStatus(
+  target: CustomerManufacturingStatusSummary,
+  source: CustomerManufacturingStatusSummary,
+) {
+  target.total_bom += source.total_bom;
+  target.waiting += source.waiting;
+  target.material_in += source.material_in;
+  target.material_check += source.material_check;
+  target.machining_wait += source.machining_wait;
+  target.machining += source.machining;
+  target.machining_done += source.machining_done;
+  target.qc_requested += source.qc_requested;
+  target.qc_inspecting += source.qc_inspecting;
+  target.shipment_ready += source.shipment_ready;
+  target.shipped += source.shipped;
 }
 
 function normalizeProjectSummary(
@@ -667,6 +722,191 @@ export async function getCustomerProjectDashboard(): Promise<CustomerProjectDash
   if (projectError) throw projectError;
 
   const projects = (projectData ?? []) as ProjectRow[];
+  const projectIds = projects.map((project) => project.id);
+
+  const manufacturingByProject =
+    new Map<string, CustomerManufacturingStatusSummary>();
+
+  projectIds.forEach((projectId) => {
+    manufacturingByProject.set(
+      projectId,
+      createEmptyManufacturingStatus(),
+    );
+  });
+
+  if (projectIds.length > 0) {
+    const {
+      data: dashboardBomData,
+      error: dashboardBomError,
+    } = await supabase
+      .from("bom_items")
+      .select("id, project_id, process_type")
+      .in("project_id", projectIds);
+
+    if (dashboardBomError) throw dashboardBomError;
+
+    const dashboardBomRows =
+      (dashboardBomData ?? []) as DashboardBomRow[];
+
+    const dashboardBomIds = dashboardBomRows.map(
+      (item) => item.id,
+    );
+
+    const latestProductionMap = new Map<string, ProductionRow>();
+    const activeQualityMap = new Map<string, QualityRow>();
+    const latestShipmentMap = new Map<string, ShipmentRow>();
+
+    if (dashboardBomIds.length > 0) {
+      const [
+        productionResult,
+        qualityResult,
+        shipmentResult,
+      ] = await Promise.all([
+        supabase
+          .from("production_updates")
+          .select(`
+            bom_item_id,
+            progress,
+            status,
+            process_step,
+            issue_flag,
+            memo,
+            created_at,
+            updated_at
+          `)
+          .in("bom_item_id", dashboardBomIds)
+          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false }),
+
+        supabase
+          .from("qc_requests")
+          .select(`
+            id,
+            bom_item_id,
+            qc_status,
+            inspection_date,
+            priority,
+            memo,
+            updated_at
+          `)
+          .in("bom_item_id", dashboardBomIds)
+          .eq("is_active", true)
+          .order("updated_at", { ascending: false }),
+
+        supabase
+          .from("shipments")
+          .select(`
+            id,
+            bom_item_id,
+            shipment_status,
+            shipment_date,
+            shipped_quantity,
+            created_at,
+            updated_at
+          `)
+          .in("bom_item_id", dashboardBomIds)
+          .order("updated_at", { ascending: false })
+          .order("created_at", { ascending: false }),
+      ]);
+
+      if (productionResult.error) throw productionResult.error;
+      if (qualityResult.error) throw qualityResult.error;
+      if (shipmentResult.error) throw shipmentResult.error;
+
+      ((productionResult.data ?? []) as ProductionRow[]).forEach(
+        (row) => {
+          if (!row.bom_item_id) return;
+          if (!latestProductionMap.has(row.bom_item_id)) {
+            latestProductionMap.set(row.bom_item_id, row);
+          }
+        },
+      );
+
+      ((qualityResult.data ?? []) as QualityRow[]).forEach(
+        (row) => {
+          if (!row.bom_item_id) return;
+          if (!activeQualityMap.has(row.bom_item_id)) {
+            activeQualityMap.set(row.bom_item_id, row);
+          }
+        },
+      );
+
+      ((shipmentResult.data ?? []) as ShipmentRow[]).forEach(
+        (row) => {
+          if (!row.bom_item_id) return;
+          if (!latestShipmentMap.has(row.bom_item_id)) {
+            latestShipmentMap.set(row.bom_item_id, row);
+          }
+        },
+      );
+    }
+
+    dashboardBomRows.forEach((item) => {
+      if (!item.project_id) return;
+
+      const summary =
+        manufacturingByProject.get(item.project_id) ??
+        createEmptyManufacturingStatus();
+
+      summary.total_bom += 1;
+
+      const production = latestProductionMap.get(item.id);
+      const quality = activeQualityMap.get(item.id);
+      const shipment = latestShipmentMap.get(item.id);
+
+      // Partner 출하관리와 동일한 기준:
+      // QC가 승인(passed)된 BOM만 현재 출하 대상으로 인정합니다.
+      // 과거 shipment row가 남아 있더라도 QC가 NCR/재검사/보류로
+      // 돌아간 경우 Customer 제조현황에서는 출하로 집계하지 않습니다.
+      const shipmentIsEffective =
+        quality?.qc_status === "passed";
+
+      const process =
+        production?.process_step ??
+        item.process_type ??
+        "대기";
+
+      if (process === "대기") summary.waiting += 1;
+      if (process === "소재입고") summary.material_in += 1;
+      if (process === "소재검수") summary.material_check += 1;
+      if (process === "가공대기") summary.machining_wait += 1;
+
+      if (
+        process === "내부공정" ||
+        process === "외부공정"
+      ) {
+        summary.machining += 1;
+      }
+
+      if (process === "가공완료") summary.machining_done += 1;
+      if (process === "검수요청") summary.qc_requested += 1;
+
+      if (quality?.qc_status === "inspecting") {
+        summary.qc_inspecting += 1;
+      }
+
+      if (
+        shipmentIsEffective &&
+        shipment?.shipment_status === "ready"
+      ) {
+        summary.shipment_ready += 1;
+      }
+
+      if (
+        shipmentIsEffective &&
+        (
+          shipment?.shipment_status === "partial_shipped" ||
+          shipment?.shipment_status === "shipped" ||
+          shipment?.shipment_status === "delivered" ||
+          shipment?.shipment_status === "completed"
+        )
+      ) {
+        summary.shipped += 1;
+      }
+
+      manufacturingByProject.set(item.project_id, summary);
+    });
+  }
 
   const partnerIds = Array.from(
     new Set(
@@ -724,6 +964,9 @@ export async function getCustomerProjectDashboard(): Promise<CustomerProjectDash
           created_at: project.created_at,
           updated_at: project.updated_at,
           summary,
+          manufacturing_status:
+            manufacturingByProject.get(project.id) ??
+            createEmptyManufacturingStatus(),
           overall_progress: calculateOverallProgress(
             project.status,
             summary,
@@ -736,12 +979,22 @@ export async function getCustomerProjectDashboard(): Promise<CustomerProjectDash
     ),
   );
 
-  const projectIds = projectItems.map((project) => project.id);
+  const activeProjectIds = projectItems.map((project) => project.id);
 
   const activities = await getActivityRowsWithBom(
-    projectIds,
+    activeProjectIds,
     30,
   );
+
+  const manufacturingStatus =
+    createEmptyManufacturingStatus();
+
+  projectItems.forEach((project) => {
+    addManufacturingStatus(
+      manufacturingStatus,
+      project.manufacturing_status,
+    );
+  });
 
   const kpi = {
     total_active_projects: projectItems.length,
@@ -762,6 +1015,7 @@ export async function getCustomerProjectDashboard(): Promise<CustomerProjectDash
   return {
     projects: projectItems,
     activities,
+    manufacturing_status: manufacturingStatus,
     kpi,
   };
 }
@@ -992,6 +1246,14 @@ export async function getCustomerProjectDetail(
         production?.progress ??
         getInitialProgress(effectiveProcess);
 
+      // Customer는 Partner 출하관리와 동일하게
+      // "QC 승인(passed)된 BOM만 출하 유효" 기준을 사용합니다.
+      // 따라서 NCR(failed), 재검사(scheduled/inspecting), 보류(hold) 등으로
+      // 품질 상태가 되돌아가면 DB에 과거 shipment row가 남아 있어도
+      // 현재 출하상태로 노출하지 않습니다.
+      const shipmentIsEffective =
+        quality?.qc_status === "passed";
+
       return {
         id: bomItem.id,
         project_id: bomItem.project_id,
@@ -1034,15 +1296,28 @@ export async function getCustomerProjectDetail(
         },
 
         shipment: {
-          id: shipment?.id ?? null,
-          shipment_status: shipment?.shipment_status ?? null,
-          shipment_date: shipment?.shipment_date ?? null,
+          id:
+            shipmentIsEffective
+              ? shipment?.id ?? null
+              : null,
+          shipment_status:
+            shipmentIsEffective
+              ? shipment?.shipment_status ?? null
+              : null,
+          shipment_date:
+            shipmentIsEffective
+              ? shipment?.shipment_date ?? null
+              : null,
           shipped_quantity:
-            shipment?.shipped_quantity === null ||
-            shipment?.shipped_quantity === undefined
-              ? null
-              : Number(shipment.shipped_quantity),
-          updated_at: shipment?.updated_at ?? null,
+            shipmentIsEffective &&
+            shipment?.shipped_quantity !== null &&
+            shipment?.shipped_quantity !== undefined
+              ? Number(shipment.shipped_quantity)
+              : null,
+          updated_at:
+            shipmentIsEffective
+              ? shipment?.updated_at ?? null
+              : null,
         },
 
         settlement: {
@@ -1062,7 +1337,9 @@ export async function getCustomerProjectDetail(
         latest_update_at: getLatestTimestamp([
           production?.updated_at,
           quality?.updated_at,
-          shipment?.updated_at,
+          shipmentIsEffective
+            ? shipment?.updated_at
+            : null,
           settlement?.updated_at,
           bomItem.updated_at,
         ]),
