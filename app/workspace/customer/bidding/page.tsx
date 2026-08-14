@@ -2,6 +2,17 @@
 
 import Link from "next/link";
 import {
+  Award,
+  CalendarDays,
+  Download,
+  FileText,
+  PiggyBank,
+  Plus,
+  Search,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import {
   useMemo,
   useState,
 } from "react";
@@ -11,7 +22,6 @@ import { useSubmittedQuotes } from "@/hooks/customer/useSubmittedQuotes";
 
 import type {
   CustomerQuoteListItem,
-  CustomerQuoteStatus,
 } from "@/services/customer/quoteService";
 
 type BiddingStatus =
@@ -89,14 +99,14 @@ function getBiddingStatusInfo(
   switch (status) {
     case "in_progress":
       return {
-        label: "입찰 진행",
+        label: "입찰 대기",
         className:
           "bg-blue-50 text-blue-700",
       };
 
     case "evaluating":
       return {
-        label: "평가 중",
+        label: "입찰 중",
         className:
           "bg-orange-50 text-orange-700",
       };
@@ -395,12 +405,6 @@ export default function CustomerBiddingPage() {
     rfqGroups,
   ]);
 
-  const recentGroups =
-    useMemo(
-      () =>
-        rfqGroups.slice(0, 5),
-      [rfqGroups],
-    );
 
   const partnerRanking =
     useMemo(() => {
@@ -496,11 +500,24 @@ export default function CustomerBiddingPage() {
 
   return (
     <WorkspaceLayout role="customer">
-      <div className="min-h-full bg-[#f7f9fc]">
-        <div className="mx-auto w-full max-w-[1760px] px-5 py-5 lg:px-7">
+      <style>{`
+        .g1-scroll-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        .g1-scroll-hide::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      `}</style>
+
+      <div className="g1-scroll-hide min-h-full overflow-auto bg-[#f7f9fc]">
+        <div className="g1-scroll-hide mx-auto w-full max-w-[1760px] px-5 py-5 lg:px-7">
           <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h1 className="text-[26px] font-extrabold tracking-tight text-slate-950">
+              <h1 className="text-2xl font-black tracking-tight text-slate-950">
                 입찰관리
               </h1>
 
@@ -513,16 +530,18 @@ export default function CustomerBiddingPage() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/workspace/customer/bidding/request"
-                className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
               >
-                + 입찰 요청하기
+                <Plus size={14} />
+                입찰 요청하기
               </Link>
 
               <button
                 type="button"
                 disabled
-                className="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-5 text-sm font-bold text-slate-400 shadow-sm"
+                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-400 shadow-sm"
               >
+                <Download size={14} />
                 엑셀 다운로드
               </button>
             </div>
@@ -532,18 +551,24 @@ export default function CustomerBiddingPage() {
             <KpiCard
               title="전체 입찰 요청"
               value={`${summary.totalRfq}건`}
-              description={`평가중 ${summary.evaluating}건`}
+              description={`입찰중 ${summary.evaluating}건`}
+              icon={FileText}
+              tone="blue"
             />
 
             <KpiCard
               title="입찰 참여"
               value={`${summary.totalParticipants}건`}
               description="제출 견적 기준"
+              icon={Users}
+              tone="green"
             />
 
             <KpiCard
               title="선정 완료"
               value={`${summary.completed}건`}
+              icon={Award}
+              tone="violet"
               description={
                 summary.totalRfq > 0
                   ? `선정률 ${Math.round(
@@ -561,12 +586,16 @@ export default function CustomerBiddingPage() {
                 summary.averageQuote,
               )}
               description="VAT 별도"
+              icon={WalletCards}
+              tone="amber"
             />
 
             <KpiCard
               title="평균 납기"
               value="-"
               description="제안 납기 집계 예정"
+              icon={CalendarDays}
+              tone="cyan"
             />
 
             <KpiCard
@@ -575,10 +604,12 @@ export default function CustomerBiddingPage() {
                 summary.expectedSaving,
               )}
               description="선정 결과 기준"
+              icon={PiggyBank}
+              tone="rose"
             />
           </section>
 
-          <section className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
+          <section className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
             <div className="min-w-0">
               <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
                 <div className="border-b border-slate-200 px-5 pt-4">
@@ -591,7 +622,7 @@ export default function CustomerBiddingPage() {
                           rfqGroups.length,
                       },
                       {
-                        label: "입찰 진행",
+                        label: "입찰 대기",
                         value:
                           "in_progress",
                         count:
@@ -602,7 +633,7 @@ export default function CustomerBiddingPage() {
                           ).length,
                       },
                       {
-                        label: "평가 중",
+                        label: "입찰 중",
                         value:
                           "evaluating",
                         count:
@@ -637,7 +668,7 @@ export default function CustomerBiddingPage() {
                               )
                             }
                             className={[
-                              "border-b-2 pb-3 text-sm font-bold transition",
+                              "border-b-2 pb-3 text-xs font-bold transition",
                               active
                                 ? "border-blue-600 text-blue-700"
                                 : "border-transparent text-slate-500 hover:text-slate-800",
@@ -673,16 +704,16 @@ export default function CustomerBiddingPage() {
                             .value as BiddingStatusFilter,
                         )
                       }
-                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
                     >
                       <option value="all">
                         전체
                       </option>
                       <option value="in_progress">
-                        입찰 진행
+                        입찰 대기
                       </option>
                       <option value="evaluating">
-                        평가 중
+                        입찰 중
                       </option>
                       <option value="completed">
                         선정 완료
@@ -691,7 +722,12 @@ export default function CustomerBiddingPage() {
                   </div>
 
                   <div className="flex w-full gap-2 xl:w-auto">
-                    <input
+                    <div className="relative min-w-0 flex-1 xl:w-[300px]">
+                      <Search
+                        size={14}
+                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                      />
+                      <input
                       type="search"
                       value={
                         searchKeyword
@@ -705,8 +741,9 @@ export default function CustomerBiddingPage() {
                         )
                       }
                       placeholder="프로젝트명, 입찰번호 검색"
-                      className="h-10 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 xl:w-[300px]"
-                    />
+                      className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-4 text-xs font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 xl:w-[300px]"
+                      />
+                    </div>
 
                     <button
                       type="button"
@@ -718,7 +755,7 @@ export default function CustomerBiddingPage() {
                           "all",
                         );
                       }}
-                      className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                      className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
                     >
                       필터 초기화
                     </button>
@@ -729,7 +766,7 @@ export default function CustomerBiddingPage() {
                 0 ? (
                   <EmptyState />
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="g1-scroll-hide overflow-x-auto">
                     <table className="w-full min-w-[1160px] border-collapse">
                       <thead>
                         <tr className="border-b border-slate-200 bg-[#f7f9fc]">
@@ -887,7 +924,7 @@ export default function CustomerBiddingPage() {
                 )}
 
                 <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
-                  <p className="text-sm font-bold text-slate-700">
+                  <p className="text-xs font-bold text-slate-500">
                     총{" "}
                     {
                       filteredGroups.length
@@ -924,14 +961,6 @@ export default function CustomerBiddingPage() {
             </div>
 
             <aside className="space-y-4">
-              <StatusSummaryPanel
-                groups={rfqGroups}
-              />
-
-              <RecentRfqPanel
-                groups={recentGroups}
-              />
-
               <PartnerRankingPanel
                 partners={
                   partnerRanking
@@ -958,176 +987,54 @@ function KpiCard({
   title,
   value,
   description,
+  icon: Icon,
+  tone,
 }: {
   title: string;
   value: string;
   description: string;
+  icon: React.ElementType;
+  tone:
+    | "blue"
+    | "green"
+    | "violet"
+    | "amber"
+    | "cyan"
+    | "rose";
 }) {
+  const toneClassMap = {
+    blue: "bg-blue-50 text-blue-600",
+    green: "bg-emerald-50 text-emerald-600",
+    violet: "bg-violet-50 text-violet-600",
+    amber: "bg-amber-50 text-amber-600",
+    cyan: "bg-cyan-50 text-cyan-600",
+    rose: "bg-rose-50 text-rose-600",
+  };
+
   return (
     <article className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <p className="text-sm font-bold text-slate-700">
-        {title}
-      </p>
-
-      <p className="mt-3 break-words text-[24px] font-black leading-tight text-slate-950">
-        {value}
-      </p>
-
-      <p className="mt-2 text-xs text-slate-500">
-        {description}
-      </p>
-    </article>
-  );
-}
-
-function StatusSummaryPanel({
-  groups,
-}: {
-  groups: RfqGroup[];
-}) {
-  const items = [
-    {
-      label: "입찰 진행",
-      count:
-        groups.filter(
-          (group) =>
-            group.status ===
-            "in_progress",
-        ).length,
-      className: "bg-blue-600",
-    },
-    {
-      label: "평가 중",
-      count:
-        groups.filter(
-          (group) =>
-            group.status ===
-            "evaluating",
-        ).length,
-      className: "bg-orange-400",
-    },
-    {
-      label: "선정 완료",
-      count:
-        groups.filter(
-          (group) =>
-            group.status ===
-            "completed",
-        ).length,
-      className: "bg-emerald-500",
-    },
-  ];
-
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
-        입찰 현황 요약
-      </h2>
-
-      <div className="mt-5 space-y-4">
-        {items.map((item) => {
-          const percentage =
-            groups.length > 0
-              ? Math.round(
-                  (item.count /
-                    groups.length) *
-                    100,
-                )
-              : 0;
-
-          return (
-            <div
-              key={item.label}
-              className="space-y-2"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-600">
-                  {item.label}
-                </span>
-
-                <span className="text-xs font-bold text-slate-900">
-                  {item.count}건 (
-                  {percentage}%)
-                </span>
-              </div>
-
-              <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className={`h-full ${item.className}`}
-                  style={{
-                    width: `${percentage}%`,
-                  }}
-                />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="mt-5 rounded-lg bg-slate-950 px-4 py-4 text-center text-white">
-        <p className="text-xs text-slate-300">
-          전체 입찰
-        </p>
-
-        <p className="mt-1 text-2xl font-black">
-          {groups.length}건
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function RecentRfqPanel({
-  groups,
-}: {
-  groups: RfqGroup[];
-}) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-extrabold text-slate-950">
-          최근 입찰 요청
-        </h2>
-      </div>
-
-      {groups.length === 0 ? (
-        <p className="py-6 text-center text-xs text-slate-500">
-          최근 입찰 요청이 없습니다.
-        </p>
-      ) : (
-        <div className="mt-4 space-y-3">
-          {groups.map((group) => (
-            <Link
-              key={
-                group.bidding_request_id
-              }
-              href={`/workspace/customer/bidding/${group.bidding_request_id}`}
-              className="flex items-start justify-between gap-4 border-b border-slate-100 pb-3 text-xs last:border-b-0 last:pb-0"
-            >
-              <div className="min-w-0">
-                <p className="font-bold text-slate-800">
-                  {getShortCode(
-                    group.bidding_request_id,
-                  )}
-                </p>
-
-                <p className="mt-1 truncate text-slate-500">
-                  {
-                    group.project_name
-                  }
-                </p>
-              </div>
-
-              <span className="shrink-0 text-slate-400">
-                {formatDate(
-                  group.latest_submitted_at,
-                )}
-              </span>
-            </Link>
-          ))}
+      <div className="flex items-start gap-3">
+        <div
+          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${toneClassMap[tone]}`}
+        >
+          <Icon size={17} />
         </div>
-      )}
-    </section>
+
+        <div className="min-w-0">
+          <p className="text-xs font-black text-slate-600">
+            {title}
+          </p>
+
+          <p className="mt-2 break-words text-xl font-black leading-tight text-slate-950">
+            {value}
+          </p>
+
+          <p className="mt-1.5 text-xs font-semibold text-slate-500">
+            {description}
+          </p>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -1142,7 +1049,7 @@ function PartnerRankingPanel({
 }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
+      <h2 className="text-sm font-black text-slate-950">
         참여 업체 TOP 5
       </h2>
 
@@ -1151,7 +1058,7 @@ function PartnerRankingPanel({
           참여 업체 데이터가 없습니다.
         </p>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-lg border border-slate-100">
+        <div className="g1-scroll-hide mt-4 overflow-hidden rounded-lg border border-slate-100">
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-slate-50 text-slate-500">
@@ -1261,7 +1168,7 @@ function TableCell({
 
   return (
     <td
-      className={`whitespace-nowrap px-4 py-3.5 text-sm text-slate-700 ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3.5 text-xs text-slate-700 ${alignClass}`}
     >
       {children}
     </td>

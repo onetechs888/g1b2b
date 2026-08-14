@@ -1,8 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
 import {
+  ArrowLeft,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw,
+  Users,
+} from "lucide-react";
+import { useParams } from "next/navigation";
+import React, {
   useMemo,
   useState,
 } from "react";
@@ -372,7 +382,19 @@ export default function CustomerBiddingDetailPage() {
 
   return (
     <WorkspaceLayout role="customer">
-      <div className="min-h-full bg-[#f7f9fc]">
+      <style>{`
+        .g1-scroll-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+        .g1-scroll-hide::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      `}</style>
+
+      <div className="g1-scroll-hide min-h-full overflow-auto bg-[#f7f9fc]">
         <div className="mx-auto w-full max-w-[1760px] px-5 py-5 lg:px-7">
           {/* =================================================
            * Header
@@ -396,7 +418,7 @@ export default function CustomerBiddingDetailPage() {
               </div>
 
               <div className="mt-3 flex flex-wrap items-center gap-3">
-                <h1 className="text-[26px] font-black tracking-tight text-slate-950">
+                <h1 className="text-2xl font-black tracking-tight text-slate-950">
                   {rfq.project_name}
                 </h1>
 
@@ -417,9 +439,10 @@ export default function CustomerBiddingDetailPage() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/workspace/customer/bidding"
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
-                ← 입찰목록
+                <ArrowLeft size={14} />
+                입찰목록
               </Link>
 
               <button
@@ -427,8 +450,9 @@ export default function CustomerBiddingDetailPage() {
                 onClick={() =>
                   void refresh()
                 }
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-blue-300 hover:text-blue-700"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 text-xs font-black text-white shadow-sm transition hover:bg-blue-700"
               >
+                <RefreshCw size={14} />
                 새로고침
               </button>
             </div>
@@ -443,6 +467,8 @@ export default function CustomerBiddingDetailPage() {
               label="참여 업체"
               value={`${comparison.participant_count}개사`}
               description={`유효 견적 ${comparison.submitted_quote_count}건`}
+              icon={Users}
+              tone="blue"
             />
 
             <SummaryCard
@@ -451,6 +477,8 @@ export default function CustomerBiddingDetailPage() {
                 comparison.lowest_total_amount,
               )}
               description="제출 견적 기준"
+              icon={ArrowDownToLine}
+              tone="emerald"
             />
 
             <SummaryCard
@@ -459,6 +487,8 @@ export default function CustomerBiddingDetailPage() {
                 comparison.average_total_amount,
               )}
               description="참여업체 평균"
+              icon={BarChart3}
+              tone="violet"
             />
 
             <SummaryCard
@@ -467,6 +497,8 @@ export default function CustomerBiddingDetailPage() {
                 comparison.highest_total_amount,
               )}
               description="제출 견적 기준"
+              icon={ArrowUpFromLine}
+              tone="orange"
             />
           </section>
 
@@ -481,66 +513,74 @@ export default function CustomerBiddingDetailPage() {
               </h2>
             </div>
 
-            <div className="grid grid-cols-1 gap-x-8 gap-y-5 px-5 py-5 md:grid-cols-2 xl:grid-cols-4">
-              <InfoItem
-                label="Customer"
-                value={
-                  comparison.customer_company_name
-                }
-              />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid grid-rows-2 border-b border-slate-100 md:border-r xl:border-b-0">
+                <InfoItem
+                  label="Customer"
+                  value={
+                    comparison.customer_company_name
+                  }
+                />
 
-              <InfoItem
-                label="입찰 마감"
-                value={formatDateTime(
-                  rfq.bid_deadline,
-                )}
-              />
+                <InfoItem
+                  label="RFQ 상태"
+                  value={
+                    rfq.status
+                  }
+                />
+              </div>
 
-              <InfoItem
-                label="희망 납기"
-                value={formatDate(
-                  rfq.due_date,
-                )}
-              />
+              <div className="grid grid-rows-2 border-b border-slate-100 xl:border-b-0 xl:border-r">
+                <InfoItem
+                  label="입찰 마감"
+                  value={formatDateTime(
+                    rfq.bid_deadline,
+                  )}
+                />
 
-              <InfoItem
-                label="최소 Partner Tier"
-                value={
-                  rfq.minimum_partner_tier ??
-                  "-"
-                }
-              />
+                <InfoItem
+                  label="선정 업체"
+                  value={
+                    comparison.selected_partner_company_name ??
+                    "-"
+                  }
+                />
+              </div>
 
-              <InfoItem
-                label="RFQ 상태"
-                value={
-                  rfq.status
-                }
-              />
+              <div className="grid grid-rows-2 border-b border-slate-100 md:border-r xl:border-b-0">
+                <InfoItem
+                  label="희망 납기"
+                  value={formatDate(
+                    rfq.due_date,
+                  )}
+                />
 
-              <InfoItem
-                label="선정 업체"
-                value={
-                  comparison.selected_partner_company_name ??
-                  "-"
-                }
-              />
+                <InfoItem
+                  label="Project 생성"
+                  value={
+                    rfq.project_id
+                      ? "생성 완료"
+                      : "미생성"
+                  }
+                />
+              </div>
 
-              <InfoItem
-                label="Project 생성"
-                value={
-                  rfq.project_id
-                    ? "생성 완료"
-                    : "미생성"
-                }
-              />
+              <div className="grid grid-rows-2">
+                <InfoItem
+                  label="최소 Partner Tier"
+                  value={
+                    rfq.minimum_partner_tier ??
+                    "-"
+                  }
+                />
 
-              <InfoItem
-                label="등록일"
-                value={formatDateTime(
-                  rfq.created_at,
-                )}
-              />
+                <InfoItem
+                  label="등록일"
+                  value={formatDateTime(
+                    rfq.created_at,
+                  )}
+                />
+              </div>
             </div>
 
             {rfq.description ||
@@ -608,11 +648,32 @@ export default function CustomerBiddingDetailPage() {
                   comparison.lowest_total_amount
                 }
                 selectedQuoteId={
-                  selectedQuote?.id ??
-                  null
+                  selectedQuoteId
                 }
-                onSelect={
-                  setSelectedQuoteId
+                onSelect={(quoteId) =>
+                  setSelectedQuoteId(
+                    (current) =>
+                      current === quoteId
+                        ? null
+                        : quoteId,
+                  )
+                }
+                selectedPartnerCompanyId={
+                  rfq.selected_partner_company_id
+                }
+                projectId={
+                  rfq.project_id
+                }
+                selecting={
+                  selecting
+                }
+                selectionError={
+                  selectionError
+                }
+                onSelectPartner={(quote) =>
+                  void handleSelectPartner(
+                    quote,
+                  )
                 }
               />
             ) : (
@@ -627,42 +688,6 @@ export default function CustomerBiddingDetailPage() {
             )}
           </section>
 
-          {/* =================================================
-           * Selected Vendor Detail
-           * =============================================== */}
-
-          {selectedQuote ? (
-            <section className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
-              <SelectedQuoteDetail
-                quote={
-                  selectedQuote
-                }
-              />
-
-              <SelectionPanel
-                quote={
-                  selectedQuote
-                }
-                selectedPartnerCompanyId={
-                  rfq.selected_partner_company_id
-                }
-                projectId={
-                  rfq.project_id
-                }
-                selecting={
-                  selecting
-                }
-                selectionError={
-                  selectionError
-                }
-                onSelectPartner={() =>
-                  void handleSelectPartner(
-                    selectedQuote,
-                  )
-                }
-              />
-            </section>
-          ) : null}
         </div>
       </div>
     </WorkspaceLayout>
@@ -677,24 +702,45 @@ function SummaryCard({
   label,
   value,
   description,
+  icon: Icon,
+  tone,
 }: {
   label: string;
   value: string;
   description: string;
+  icon: React.ElementType;
+  tone: "blue" | "emerald" | "violet" | "orange";
 }) {
+  const toneClassMap = {
+    blue: "bg-blue-50 text-blue-600",
+    emerald: "bg-emerald-50 text-emerald-600",
+    violet: "bg-violet-50 text-violet-600",
+    orange: "bg-orange-50 text-orange-600",
+  };
+
   return (
     <article className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-      <p className="text-sm font-bold text-slate-600">
-        {label}
-      </p>
+      <div className="flex items-start gap-3">
+        <div
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${toneClassMap[tone]}`}
+        >
+          <Icon size={18} />
+        </div>
 
-      <p className="mt-3 break-words text-[23px] font-black leading-tight text-slate-950">
-        {value}
-      </p>
+        <div className="min-w-0">
+          <p className="text-xs font-black text-slate-600">
+            {label}
+          </p>
 
-      <p className="mt-2 text-xs text-slate-500">
-        {description}
-      </p>
+          <p className="mt-2 break-words text-xl font-black leading-tight text-slate-950">
+            {value}
+          </p>
+
+          <p className="mt-1.5 text-xs font-semibold text-slate-500">
+            {description}
+          </p>
+        </div>
+      </div>
     </article>
   );
 }
@@ -711,13 +757,13 @@ function InfoItem({
   value: string;
 }) {
   return (
-    <div>
-      <p className="text-xs font-bold text-slate-400">
+    <div className="flex min-h-[72px] min-w-0 flex-col justify-center px-5 py-3">
+      <p className="text-xs font-bold text-slate-500">
         {label}
       </p>
 
-      <p className="mt-1.5 text-sm font-bold text-slate-800">
-        {value}
+      <p className="mt-1.5 break-words text-sm font-black leading-5 text-slate-900">
+        {value || "-"}
       </p>
     </div>
   );
@@ -761,7 +807,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={[
-        "mr-7 border-b-2 px-1 py-4 text-sm font-extrabold transition",
+        "mr-7 border-b-2 px-1 py-3.5 text-sm font-black transition",
         active
           ? "border-blue-600 text-blue-700"
           : "border-transparent text-slate-500 hover:text-slate-800",
@@ -781,12 +827,26 @@ function VendorComparison({
   lowestAmount,
   selectedQuoteId,
   onSelect,
+  selectedPartnerCompanyId,
+  projectId,
+  selecting,
+  selectionError,
+  onSelectPartner,
 }: {
   quotes: CustomerPartnerQuote[];
   lowestAmount: number | null;
   selectedQuoteId: string | null;
   onSelect: (
     quoteId: string,
+  ) => void;
+  selectedPartnerCompanyId:
+    | string
+    | null;
+  projectId: string | null;
+  selecting: boolean;
+  selectionError: string | null;
+  onSelectPartner: (
+    quote: CustomerPartnerQuote,
   ) => void;
 }) {
   if (
@@ -798,7 +858,7 @@ function VendorComparison({
   }
 
   return (
-    <div className="overflow-x-auto">
+    <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       <table className="w-full min-w-[1120px] border-collapse">
         <thead>
           <tr className="border-b border-slate-200 bg-[#f7f9fc]">
@@ -864,125 +924,182 @@ function VendorComparison({
                 quote.total_amount ===
                   lowestAmount;
 
-              const selected =
+              const expanded =
                 selectedQuoteId ===
                 quote.id;
 
               return (
-                <tr
+                <React.Fragment
                   key={quote.id}
-                  onClick={() =>
-                    onSelect(
-                      quote.id,
-                    )
-                  }
-                  className={[
-                    "cursor-pointer border-b border-slate-100 transition last:border-b-0",
-                    selected
-                      ? "bg-blue-50/60"
-                      : "hover:bg-slate-50",
-                  ].join(
-                    " ",
-                  )}
                 >
-                  <TableCell align="center">
-                    <span
-                      className={[
-                        "inline-flex h-4 w-4 rounded-full border-4",
-                        selected
-                          ? "border-blue-600 bg-white"
-                          : "border-slate-300 bg-white",
-                      ].join(
-                        " ",
-                      )}
-                    />
-                  </TableCell>
-
-                  <TableCell>
-                    <div>
-                      <p className="font-extrabold text-slate-900">
-                        {
-                          quote.partner_company_name
-                        }
-                      </p>
-
-                      {isLowest ? (
-                        <span className="mt-1 inline-flex rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-extrabold text-emerald-700">
-                          최저 견적
-                        </span>
-                      ) : null}
-                    </div>
-                  </TableCell>
-
-                  <TableCell align="right">
-                    <span className="font-black text-slate-950">
-                      {formatCurrency(
-                        quote.total_amount,
-                      )}
-                    </span>
-                  </TableCell>
-
-                  <TableCell align="center">
-                    {isLowest ? (
-                      <span className="font-bold text-emerald-600">
-                        기준
-                      </span>
-                    ) : differenceRate !==
-                      null ? (
-                      <span className="font-bold text-orange-600">
-                        +
-                        {differenceRate.toFixed(
-                          1,
-                        )}
-                        %
-                      </span>
-                    ) : (
-                      "-"
-                    )}
-                  </TableCell>
-
-                  <TableCell align="center">
-                    {
-                      quote.item_count
+                  <tr
+                    onClick={() =>
+                      onSelect(
+                        quote.id,
+                      )
                     }
-                  </TableCell>
-
-                  <TableCell align="center">
-                    {quote.average_lead_time_days !==
-                    null
-                      ? `${quote.average_lead_time_days}일`
-                      : "-"}
-                  </TableCell>
-
-                  <TableCell align="center">
-                    {quote.max_lead_time_days !==
-                    null
-                      ? `${quote.max_lead_time_days}일`
-                      : "-"}
-                  </TableCell>
-
-                  <TableCell>
-                    {formatDate(
-                      quote.proposed_due_date,
+                    className={[
+                      "cursor-pointer border-b border-slate-100 transition",
+                      expanded
+                        ? "bg-blue-50/60"
+                        : "hover:bg-slate-50",
+                    ].join(
+                      " ",
                     )}
-                  </TableCell>
+                  >
+                    <TableCell align="center">
+                      <span
+                        className={[
+                          "inline-flex h-4 w-4 rounded-full border-4",
+                          expanded
+                            ? "border-blue-600 bg-white"
+                            : "border-slate-300 bg-white",
+                        ].join(
+                          " ",
+                        )}
+                      />
+                    </TableCell>
 
-                  <TableCell>
-                    {formatDateTime(
-                      quote.submitted_at,
-                    )}
-                  </TableCell>
+                    <TableCell>
+                      <div>
+                        <p className="text-sm font-black text-slate-900">
+                          {
+                            quote.partner_company_name
+                          }
+                        </p>
 
-                  <TableCell align="center">
-                    <span
-                      className={`inline-flex rounded-md px-2.5 py-1 text-xs font-bold ${status.className}`}
-                    >
+                        {isLowest ? (
+                          <span className="mt-1 inline-flex rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-black text-emerald-700">
+                            최저 견적
+                          </span>
+                        ) : null}
+                      </div>
+                    </TableCell>
+
+                    <TableCell align="right">
+                      <span className="font-black text-slate-950">
+                        {formatCurrency(
+                          quote.total_amount,
+                        )}
+                      </span>
+                    </TableCell>
+
+                    <TableCell align="center">
+                      {isLowest ? (
+                        <span className="font-bold text-emerald-600">
+                          기준
+                        </span>
+                      ) : differenceRate !==
+                        null ? (
+                        <span className="font-bold text-orange-600">
+                          +
+                          {differenceRate.toFixed(
+                            1,
+                          )}
+                          %
+                        </span>
+                      ) : (
+                        "-"
+                      )}
+                    </TableCell>
+
+                    <TableCell align="center">
                       {
-                        status.label
+                        quote.item_count
                       }
-                    </span>
-                  </TableCell>
-                </tr>
+                    </TableCell>
+
+                    <TableCell align="center">
+                      {quote.average_lead_time_days !==
+                      null
+                        ? `${quote.average_lead_time_days}일`
+                        : "-"}
+                    </TableCell>
+
+                    <TableCell align="center">
+                      {quote.max_lead_time_days !==
+                      null
+                        ? `${quote.max_lead_time_days}일`
+                        : "-"}
+                    </TableCell>
+
+                    <TableCell>
+                      {formatDate(
+                        quote.proposed_due_date,
+                      )}
+                    </TableCell>
+
+                    <TableCell>
+                      {formatDateTime(
+                        quote.submitted_at,
+                      )}
+                    </TableCell>
+
+                    <TableCell align="center">
+                      <div className="flex items-center justify-center gap-2">
+                        <span
+                          className={`inline-flex rounded-md px-2.5 py-1 text-xs font-black ${status.className}`}
+                        >
+                          {
+                            status.label
+                          }
+                        </span>
+
+                        {expanded ? (
+                          <ChevronUp
+                            size={14}
+                            className="text-blue-600"
+                          />
+                        ) : (
+                          <ChevronDown
+                            size={14}
+                            className="text-slate-400"
+                          />
+                        )}
+                      </div>
+                    </TableCell>
+                  </tr>
+
+                  {expanded ? (
+                    <tr>
+                      <td
+                        colSpan={10}
+                        className="border-b border-slate-200 bg-slate-50/60 p-0"
+                      >
+                        <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_280px]">
+                          <SelectedQuoteDetail
+                            quote={
+                              quote
+                            }
+                          />
+
+                          <SelectionPanel
+                            quote={
+                              quote
+                            }
+                            selectedPartnerCompanyId={
+                              selectedPartnerCompanyId
+                            }
+                            projectId={
+                              projectId
+                            }
+                            selecting={
+                              selecting
+                            }
+                            selectionError={
+                              selectionError
+                            }
+                            onSelectPartner={() =>
+                              onSelectPartner(
+                                quote,
+                              )
+                            }
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </React.Fragment>
               );
             },
           )}
@@ -1003,17 +1120,23 @@ function ItemComparison({
   items: CustomerQuoteComparisonItem[];
   quotes: CustomerPartnerQuote[];
 }) {
-  if (
-    items.length === 0
-  ) {
+  if (items.length === 0) {
     return (
-      <EmptyState text="비교할 견적 품목이 없습니다." />
+      <EmptyState text="비교 가능한 품목 데이터가 없습니다." />
     );
   }
 
+  const partnerNameMap =
+    new Map(
+      quotes.map((quote) => [
+        quote.partner_company_id,
+        quote.partner_company_name,
+      ]),
+    );
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-max border-collapse">
+    <div className="overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+      <table className="w-full min-w-[1320px] border-collapse">
         <thead>
           <tr className="border-b border-slate-200 bg-[#f7f9fc]">
             <TableHeader>
@@ -1028,7 +1151,7 @@ function ItemComparison({
               도면번호
             </TableHeader>
 
-            <TableHeader>
+            <TableHeader align="center">
               Rev
             </TableHeader>
 
@@ -1036,143 +1159,201 @@ function ItemComparison({
               재질
             </TableHeader>
 
-            <TableHeader align="right">
+            <TableHeader align="center">
               수량
             </TableHeader>
 
-            {quotes.map(
-              (quote) => (
-                <TableHeader
-                  key={
-                    quote.id
-                  }
-                  align="right"
-                >
-                  {
-                    quote.partner_company_name
-                  }
-                </TableHeader>
-              ),
-            )}
-
             <TableHeader align="right">
               최저 단가
+            </TableHeader>
+
+            <TableHeader>
+              최저 업체
+            </TableHeader>
+
+            <TableHeader align="right">
+              최고 단가
+            </TableHeader>
+
+            <TableHeader>
+              최고 업체
+            </TableHeader>
+
+            <TableHeader align="right">
+              가격차
             </TableHeader>
           </tr>
         </thead>
 
         <tbody>
-          {items.map(
-            (item) => (
+          {items.map((item) => {
+            const prices =
+              item.vendors
+                .map((vendor) => ({
+                  partner_company_id:
+                    vendor.partner_company_id,
+                  partner_company_name:
+                    vendor.partner_company_name,
+                  unit_price:
+                    vendor.unit_price,
+                }))
+                .sort(
+                  (first, second) =>
+                    first.unit_price -
+                    second.unit_price,
+                );
+
+            const lowest =
+              prices[0] ?? null;
+
+            const highest =
+              prices.at(-1) ?? null;
+
+            const lowestPartnerName =
+              lowest?.partner_company_name ??
+              (lowest
+                ? partnerNameMap.get(
+                    lowest.partner_company_id,
+                  ) ?? "-"
+                : "-");
+
+            const highestPartnerName =
+              highest?.partner_company_name ??
+              (highest
+                ? partnerNameMap.get(
+                    highest.partner_company_id,
+                  ) ?? "-"
+                : "-");
+
+            const priceDifference =
+              lowest && highest
+                ? Math.max(
+                    0,
+                    highest.unit_price -
+                      lowest.unit_price,
+                  )
+                : 0;
+
+            return (
               <tr
-                key={
-                  item.bom_item_id
-                }
+                key={item.bom_item_id}
                 className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
               >
                 <TableCell>
-                  <span className="font-bold text-slate-800">
-                    {item.part_number ??
-                      "-"}
+                  <span className="font-black text-slate-950">
+                    {
+                      item.part_number ??
+                      "-"
+                    }
                   </span>
                 </TableCell>
 
                 <TableCell>
-                  <p className="max-w-[220px] truncate font-bold text-slate-900">
+                  <span className="font-black text-slate-900">
                     {
-                      item.part_name
+                      item.part_name ??
+                      "-"
                     }
-                  </p>
+                  </span>
                 </TableCell>
 
                 <TableCell>
-                  {item.drawing_no ??
-                    "-"}
+                  {
+                    item.drawing_no ??
+                    "-"
+                  }
+                </TableCell>
+
+                <TableCell align="center">
+                  {
+                    item.revision ??
+                    "-"
+                  }
                 </TableCell>
 
                 <TableCell>
-                  {item.revision ??
-                    "-"}
+                  {
+                    item.material ??
+                    "-"
+                  }
                 </TableCell>
 
-                <TableCell>
-                  {item.material ??
-                    "-"}
+                <TableCell align="center">
+                  {
+                    item.quantity
+                  }
                 </TableCell>
-
-                <TableCell align="right">
-                  {item.quantity.toLocaleString(
-                    "ko-KR",
-                  )}{" "}
-                  {item.unit ?? ""}
-                </TableCell>
-
-                {quotes.map(
-                  (quote) => {
-                    const vendor =
-                      item.vendors.find(
-                        (
-                          currentVendor,
-                        ) =>
-                          currentVendor.quote_id ===
-                          quote.id,
-                      );
-
-                    const isLowest =
-                      vendor &&
-                      item.lowest_unit_price !==
-                        null &&
-                      vendor.unit_price ===
-                        item.lowest_unit_price;
-
-                    return (
-                      <TableCell
-                        key={
-                          quote.id
-                        }
-                        align="right"
-                      >
-                        {vendor ? (
-                          <div>
-                            <span
-                              className={[
-                                "font-extrabold",
-                                isLowest
-                                  ? "text-emerald-700"
-                                  : "text-slate-800",
-                              ].join(
-                                " ",
-                              )}
-                            >
-                              {formatCurrency(
-                                vendor.unit_price,
-                              )}
-                            </span>
-
-                            {isLowest ? (
-                              <p className="mt-1 text-[10px] font-bold text-emerald-600">
-                                최저
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                    );
-                  },
-                )}
 
                 <TableCell align="right">
                   <span className="font-black text-emerald-700">
-                    {formatCurrency(
-                      item.lowest_unit_price,
-                    )}
+                    {lowest
+                      ? formatCurrency(
+                          lowest.unit_price,
+                        )
+                      : "-"}
                   </span>
                 </TableCell>
+
+                <TableCell>
+                  <span className="font-black text-slate-900">
+                    {
+                      lowestPartnerName
+                    }
+                  </span>
+
+                  {lowest ? (
+                    <span className="ml-2 inline-flex rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">
+                      최저
+                    </span>
+                  ) : null}
+                </TableCell>
+
+                <TableCell align="right">
+                  <span className="font-black text-slate-950">
+                    {highest
+                      ? formatCurrency(
+                          highest.unit_price,
+                        )
+                      : "-"}
+                  </span>
+                </TableCell>
+
+                <TableCell>
+                  <span className="font-bold text-slate-700">
+                    {
+                      highestPartnerName
+                    }
+                  </span>
+                </TableCell>
+
+                <TableCell align="right">
+                  <div className="font-black text-slate-950">
+                    {lowest && highest
+                      ? formatCurrency(
+                          priceDifference,
+                        )
+                      : "-"}
+                  </div>
+
+                  {lowest &&
+                  highest &&
+                  highest.unit_price >
+                    0 &&
+                  priceDifference >
+                    0 ? (
+                    <div className="mt-1 text-[10px] font-black text-orange-600">
+                      {Math.round(
+                        (priceDifference /
+                          highest.unit_price) *
+                          100,
+                      )}
+                      % 차이
+                    </div>
+                  ) : null}
+                </TableCell>
               </tr>
-            ),
-          )}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -1189,28 +1370,31 @@ function SelectedQuoteDetail({
   quote: CustomerPartnerQuote;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-2 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-bold text-slate-400">
+          <p className="text-xs font-bold text-slate-500">
             선택 견적
           </p>
 
-          <h2 className="mt-1 text-lg font-black text-slate-950">
+          <h2 className="mt-1 text-base font-black text-slate-950">
             {
               quote.partner_company_name
             }
           </h2>
         </div>
 
-        <p className="text-xl font-black text-slate-950">
+        <div className="text-right"><p className="text-lg font-black text-slate-950">
           {formatCurrency(
             quote.total_amount,
           )}
         </p>
+        <p className="mt-1 text-[10px] font-bold text-slate-400">
+          총 견적금액
+        </p></div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-b border-slate-100 px-5 py-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 border-b border-slate-100 px-4 py-3 lg:grid-cols-4">
         <InfoItem
           label="품목 수"
           value={`${quote.item_count}개`}
@@ -1244,12 +1428,12 @@ function SelectedQuoteDetail({
         />
       </div>
 
-      <div className="px-5 py-4">
-        <p className="text-xs font-bold text-slate-400">
+      <div className="px-4 py-3">
+        <p className="text-xs font-bold text-slate-500">
           Partner 견적 메모
         </p>
 
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+        <p className="mt-1.5 whitespace-pre-wrap text-xs leading-5 text-slate-700">
           {quote.memo ||
             "등록된 견적 메모가 없습니다."}
         </p>
@@ -1297,20 +1481,20 @@ function SelectionPanel({
     );
 
   return (
-    <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <p className="text-xs font-bold text-slate-400">
+    <aside className="rounded-lg border border-slate-200 bg-white p-4">
+      <p className="text-xs font-bold text-slate-500">
         업체 선정
       </p>
 
-      <h2 className="mt-1 text-lg font-black text-slate-950">
+      <h2 className="mt-1 text-base font-black text-slate-950">
         {
           quote.partner_company_name
         }
       </h2>
 
-      <div className="mt-4 rounded-lg bg-slate-50 p-4">
+      <div className="mt-3 rounded-lg bg-slate-50 p-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500">
+          <span className="text-xs font-bold text-slate-500">
             총 견적금액
           </span>
 
@@ -1321,8 +1505,8 @@ function SelectionPanel({
           </span>
         </div>
 
-        <div className="mt-3 flex items-center justify-between">
-          <span className="text-xs font-semibold text-slate-500">
+        <div className="mt-2 flex items-center justify-between">
+          <span className="text-xs font-bold text-slate-500">
             현재 상태
           </span>
 
@@ -1337,7 +1521,7 @@ function SelectionPanel({
       </div>
 
       {selectionError ? (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5">
           <p className="text-xs font-bold leading-5 text-red-700">
             {selectionError}
           </p>
@@ -1345,7 +1529,7 @@ function SelectionPanel({
       ) : null}
 
       {isSelected ? (
-        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
           <p className="text-sm font-extrabold text-emerald-700">
             선정 완료 업체입니다.
           </p>
@@ -1438,7 +1622,7 @@ function TableHeader({
 
   return (
     <th
-      className={`whitespace-nowrap px-4 py-3 text-xs font-extrabold text-slate-600 ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3 text-xs font-black text-slate-600 ${alignClass}`}
     >
       {children}
     </th>
@@ -1464,7 +1648,7 @@ function TableCell({
 
   return (
     <td
-      className={`whitespace-nowrap px-4 py-3.5 text-sm text-slate-700 ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3.5 text-sm font-semibold text-slate-700 ${alignClass}`}
     >
       {children}
     </td>
