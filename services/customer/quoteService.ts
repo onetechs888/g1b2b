@@ -38,6 +38,62 @@ export type CustomerQuoteListItem = {
   created_at: string;
 };
 
+
+/* =========================================================
+ * Customer RFQ 중심 입찰현황 타입
+ *
+ * 기존 CustomerQuoteListItem / getSubmittedQuotes()는
+ * RFQ 상세/기존 화면 호환을 위해 그대로 유지합니다.
+ * ======================================================= */
+
+export type CustomerBiddingListStatus =
+  | "draft"
+  | "waiting"
+  | "in_progress"
+  | "completed";
+
+export type CustomerBiddingListItem = {
+  id: string;
+
+  project_name: string;
+
+  customer_company_name: string;
+
+  request_status: string;
+
+  display_status: CustomerBiddingListStatus;
+
+  bid_deadline: string | null;
+
+  due_date: string | null;
+
+  minimum_partner_tier: string | null;
+
+  selected_partner_company_id: string | null;
+
+  selected_partner_company_name: string | null;
+
+  project_id: string | null;
+
+  bom_count: number;
+
+  participant_count: number;
+
+  submitted_count: number;
+
+  lowest_amount: number | null;
+
+  highest_amount: number | null;
+
+  average_amount: number | null;
+
+  latest_submitted_at: string | null;
+
+  created_at: string;
+
+  updated_at: string;
+};
+
 /* =========================================================
  * RFQ 상세 타입
  * ======================================================= */
@@ -285,7 +341,509 @@ async function getCustomerContext(): Promise<CustomerContext> {
 }
 
 /* =========================================================
- * 1. Customer 제출 견적 목록
+ * 1. Customer RFQ 중심 입찰현황
+ *
+ * 화면 상태 기준:
+ *
+ * draft
+ * → 임시저장
+ *
+ * 공개 RFQ + Partner 제출견적 0건
+ * → 입찰대기
+ *
+ * Partner 제출견적 1건 이상 + 미선정
+ * → 입찰중
+ *
+ * selected_partner_company_id 존재
+ * 또는 request.status = awarded / project_created
+ * → 선정완료
+ *
+ * 중요:
+ * - 목록 기준은 bidding_requests 입니다.
+ * - 따라서 아직 견적이 없는 신규 RFQ와 임시저장 RFQ도 조회됩니다.
+ * - 기존 getSubmittedQuotes()는 삭제/변경하지 않습니다.
+ * ======================================================= */
+
+export async function getCustomerBiddingList(): Promise<
+  CustomerBiddingListItem[]
+> {
+  const customer =
+    await getCustomerContext();
+
+  /**
+   * 1.
+   * 현재 Customer 회사의 RFQ 전체 조회
+   *
+   * draft 포함.
+   */
+
+  const {
+    data: requestRows,
+    error: requestError,
+  } = await supabase
+    .from("bidding_requests")
+    .select(`
+      id,
+      project_name,
+      status,
+      bid_deadline,
+      due_date,
+      minimum_partner_tier,
+      selected_partner_company_id,
+      project_id,
+      created_at,
+      updated_at
+    `)
+    .eq(
+      "customer_company_id",
+      customer.companyId,
+    )
+    .order(
+      "created_at",
+      {
+        ascending: false,
+      },
+    );
+
+  if (requestError) {
+    throw requestError;
+  }
+
+  if (!requestRows?.length) {
+    return [];
+  }
+
+  const requestIds =
+    requestRows.map(
+      (request) =>
+        request.id,
+    );
+
+  /**
+   * 2.
+   * Customer 회사명 조회
+   */
+
+  const {
+    data: customerCompany,
+    error: customerCompanyError,
+  } = await supabase
+    .from("companies")
+    .select(
+      "company_name",
+    )
+    .eq(
+      "id",
+      customer.companyId,
+    )
+    .single();
+
+  if (customerCompanyError) {
+    throw customerCompanyError;
+  }
+
+  /**
+   * 3.
+   * RFQ별 BOM 품목 수 조회
+   */
+
+  const {
+    data: bomRows,
+    error: bomError,
+  } = await supabase
+    .from("bidding_bom_items")
+    .select(`
+      id,
+      bidding_request_id
+    `)
+    .in(
+      "bidding_request_id",
+      requestIds,
+    );
+
+  if (bomError) {
+    throw bomError;
+  }
+
+  const bomCountMap =
+    new Map<string, number>();
+
+  (
+    bomRows ?? []
+  ).forEach((bom) => {
+    bomCountMap.set(
+      bom.bidding_request_id,
+      (bomCountMap.get(
+        bom.bidding_request_id,
+      ) ?? 0) + 1,
+    );
+  });
+
+  /**
+   * 4.
+   * RFQ별 Partner 견적 조회
+   *
+   * Customer 입찰현황에서 실제 진행상태를 판단할
+   * 제출/검토/선정 관련 견적만 사용합니다.
+   */
+
+  const {
+    data: quoteRows,
+    error: quoteError,
+  } = await supabase
+    .from("bidding_quotes")
+    .select(`
+      id,
+      bidding_request_id,
+      partner_company_id,
+      status,
+      submitted_at,
+      created_at
+    `)
+    .in(
+      "bidding_request_id",
+      requestIds,
+    )
+    .in("status", [
+      "submitted",
+      "waiting",
+      "awarded",
+      "rejected",
+    ]);
+
+  if (quoteError) {
+    throw quoteError;
+  }
+
+  const normalizedQuoteRows =
+    quoteRows ?? [];
+
+  /**
+   * 5.
+   * 견적 품목 금액 조회
+   */
+
+  const quoteIds =
+    normalizedQuoteRows.map(
+      (quote) =>
+        quote.id,
+    );
+
+  const quoteAmountMap =
+    new Map<string, number>();
+
+  if (quoteIds.length > 0) {
+    const {
+      data: quoteItemRows,
+      error: quoteItemError,
+    } = await supabase
+      .from(
+        "bidding_quote_items",
+      )
+      .select(`
+        quote_id,
+        total_price
+      `)
+      .in(
+        "quote_id",
+        quoteIds,
+      );
+
+    if (quoteItemError) {
+      throw quoteItemError;
+    }
+
+    (
+      quoteItemRows ?? []
+    ).forEach((item) => {
+      quoteAmountMap.set(
+        item.quote_id,
+        (quoteAmountMap.get(
+          item.quote_id,
+        ) ?? 0) +
+          Number(
+            item.total_price ??
+              0,
+          ),
+      );
+    });
+  }
+
+  /**
+   * 6.
+   * RFQ별 견적 Group
+   */
+
+  const quoteGroupMap =
+    new Map<
+      string,
+      typeof normalizedQuoteRows
+    >();
+
+  normalizedQuoteRows.forEach(
+    (quote) => {
+      const current =
+        quoteGroupMap.get(
+          quote.bidding_request_id,
+        ) ?? [];
+
+      current.push(
+        quote,
+      );
+
+      quoteGroupMap.set(
+        quote.bidding_request_id,
+        current,
+      );
+    },
+  );
+
+  /**
+   * 7.
+   * 선정 Partner 회사명 조회
+   */
+
+  const selectedPartnerIds = [
+    ...new Set(
+      requestRows
+        .map(
+          (request) =>
+            request.selected_partner_company_id,
+        )
+        .filter(
+          (
+            value,
+          ): value is string =>
+            Boolean(value),
+        ),
+    ),
+  ];
+
+  const selectedPartnerNameMap =
+    new Map<string, string>();
+
+  if (
+    selectedPartnerIds.length > 0
+  ) {
+    const {
+      data: partnerCompanies,
+      error: partnerCompanyError,
+    } = await supabase
+      .from("companies")
+      .select(
+        "id, company_name",
+      )
+      .in(
+        "id",
+        selectedPartnerIds,
+      );
+
+    if (partnerCompanyError) {
+      throw partnerCompanyError;
+    }
+
+    (
+      partnerCompanies ?? []
+    ).forEach((company) => {
+      selectedPartnerNameMap.set(
+        company.id,
+        company.company_name,
+      );
+    });
+  }
+
+  /**
+   * 8.
+   * RFQ 중심 최종 목록 반환
+   */
+
+  return requestRows.map(
+    (request) => {
+      const requestQuotes =
+        quoteGroupMap.get(
+          request.id,
+        ) ?? [];
+
+      /**
+       * 실제 제출 견적:
+       * rejected는 과거 제출 이력일 수 있지만
+       * 현재 진행 중인 유효 견적 수에서는 제외합니다.
+       */
+
+      const submittedQuotes =
+        requestQuotes.filter(
+          (quote) =>
+            quote.status ===
+              "submitted" ||
+            quote.status ===
+              "waiting" ||
+            quote.status ===
+              "awarded",
+        );
+
+      /**
+       * 참여업체 수는 해당 RFQ에 견적을 제출했던
+       * Partner 회사 기준으로 중복 제거하여 계산합니다.
+       */
+
+      const participantCount =
+        new Set(
+          requestQuotes.map(
+            (quote) =>
+              quote.partner_company_id,
+          ),
+        ).size;
+
+      const amounts =
+        submittedQuotes.map(
+          (quote) =>
+            quoteAmountMap.get(
+              quote.id,
+            ) ?? 0,
+        );
+
+      const latestSubmittedAt =
+        submittedQuotes
+          .map(
+            (quote) =>
+              quote.submitted_at,
+          )
+          .filter(
+            (
+              value,
+            ): value is string =>
+              Boolean(value),
+          )
+          .sort()
+          .at(-1) ?? null;
+
+      let displayStatus:
+        CustomerBiddingListStatus;
+
+      if (
+        request.status ===
+        "draft"
+      ) {
+        displayStatus =
+          "draft";
+      } else if (
+        Boolean(
+          request.selected_partner_company_id,
+        ) ||
+        request.status ===
+          "awarded" ||
+        request.status ===
+          "project_created"
+      ) {
+        displayStatus =
+          "completed";
+      } else if (
+        submittedQuotes.length >
+        0
+      ) {
+        displayStatus =
+          "in_progress";
+      } else {
+        displayStatus =
+          "waiting";
+      }
+
+      return {
+        id:
+          request.id,
+
+        project_name:
+          request.project_name,
+
+        customer_company_name:
+          customerCompany
+            ?.company_name ?? "-",
+
+        request_status:
+          request.status,
+
+        display_status:
+          displayStatus,
+
+        bid_deadline:
+          request.bid_deadline,
+
+        due_date:
+          request.due_date,
+
+        minimum_partner_tier:
+          request.minimum_partner_tier,
+
+        selected_partner_company_id:
+          request.selected_partner_company_id,
+
+        selected_partner_company_name:
+          request.selected_partner_company_id
+            ? selectedPartnerNameMap.get(
+                request.selected_partner_company_id,
+              ) ?? null
+            : null,
+
+        project_id:
+          request.project_id,
+
+        bom_count:
+          bomCountMap.get(
+            request.id,
+          ) ?? 0,
+
+        participant_count:
+          participantCount,
+
+        submitted_count:
+          submittedQuotes.length,
+
+        lowest_amount:
+          amounts.length > 0
+            ? Math.min(
+                ...amounts,
+              )
+            : null,
+
+        highest_amount:
+          amounts.length > 0
+            ? Math.max(
+                ...amounts,
+              )
+            : null,
+
+        average_amount:
+          amounts.length > 0
+            ? Math.round(
+                amounts.reduce(
+                  (
+                    sum,
+                    amount,
+                  ) =>
+                    sum + amount,
+                  0,
+                ) /
+                  amounts.length,
+              )
+            : null,
+
+        latest_submitted_at:
+          latestSubmittedAt,
+
+        created_at:
+          request.created_at,
+
+        updated_at:
+          request.updated_at,
+      };
+    },
+  );
+}
+
+/* =========================================================
+ * 2. Customer 제출 견적 목록
+ *
+ * 기존 화면 / 상세 비교 호환을 위해 그대로 유지합니다.
  * ======================================================= */
 
 export async function getSubmittedQuotes(): Promise<
@@ -577,7 +1135,7 @@ export async function getSubmittedQuotes(): Promise<
 }
 
 /* =========================================================
- * 2. Customer RFQ 상세 / 업체별 견적 비교
+ * 3. Customer RFQ 상세 / 업체별 견적 비교
  * ======================================================= */
 
 export async function getCustomerQuoteComparison(
@@ -1576,7 +2134,7 @@ export async function getCustomerQuoteComparison(
 }
 
 /* =========================================================
- * 3. Customer 업체 선정
+ * 4. Customer 업체 선정
  * ======================================================= */
 
 export type SelectBiddingPartnerResult = {

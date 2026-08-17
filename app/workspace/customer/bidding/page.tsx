@@ -6,9 +6,11 @@ import {
   CalendarDays,
   Download,
   FileText,
+  Pencil,
   PiggyBank,
   Plus,
   Search,
+  Trash2,
   Users,
   WalletCards,
 } from "lucide-react";
@@ -18,35 +20,22 @@ import {
 } from "react";
 
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
-import { useSubmittedQuotes } from "@/hooks/customer/useSubmittedQuotes";
+import {
+  useCustomerBiddingList,
+} from "@/hooks/customer/useSubmittedQuotes";
 
 import type {
-  CustomerQuoteListItem,
+  CustomerBiddingListItem,
+  CustomerBiddingListStatus,
 } from "@/services/customer/quoteService";
 
-type BiddingStatus =
-  | "in_progress"
-  | "evaluating"
-  | "completed";
+import {
+  deleteBiddingRequest,
+} from "@/services/customer/biddingRequestService";
 
 type BiddingStatusFilter =
   | "all"
-  | BiddingStatus;
-
-type RfqGroup = {
-  bidding_request_id: string;
-  project_name: string;
-  due_date: string | null;
-  quotes: CustomerQuoteListItem[];
-  participant_count: number;
-  submitted_count: number;
-  lowest_amount: number;
-  highest_amount: number;
-  average_amount: number;
-  awarded_partner_name: string | null;
-  status: BiddingStatus;
-  latest_submitted_at: string | null;
-};
+  | CustomerBiddingListStatus;
 
 type StatusInfo = {
   label: string;
@@ -77,8 +66,15 @@ function formatDate(
 }
 
 function formatCurrency(
-  value: number,
+  value: number | null,
 ): string {
+  if (
+    value === null ||
+    !Number.isFinite(value)
+  ) {
+    return "-";
+  }
+
   return `₩${value.toLocaleString(
     "ko-KR",
   )}`;
@@ -94,17 +90,24 @@ function getShortCode(
 }
 
 function getBiddingStatusInfo(
-  status: BiddingStatus,
+  status: CustomerBiddingListStatus,
 ): StatusInfo {
   switch (status) {
-    case "in_progress":
+    case "draft":
+      return {
+        label: "임시저장",
+        className:
+          "bg-slate-100 text-slate-700",
+      };
+
+    case "waiting":
       return {
         label: "입찰 대기",
         className:
           "bg-blue-50 text-blue-700",
       };
 
-    case "evaluating":
+    case "in_progress":
       return {
         label: "입찰 중",
         className:
@@ -120,169 +123,27 @@ function getBiddingStatusInfo(
   }
 }
 
-function getRfqStatus(
-  quotes: CustomerQuoteListItem[],
-): BiddingStatus {
-  if (
-    quotes.some(
-      (quote) =>
-        quote.status === "awarded",
-    )
-  ) {
-    return "completed";
-  }
-
-  if (
-    quotes.some(
-      (quote) =>
-        quote.status === "waiting",
-    )
-  ) {
-    return "evaluating";
-  }
-
-  return "in_progress";
-}
-
-function buildRfqGroups(
-  quotes: CustomerQuoteListItem[],
-): RfqGroup[] {
-  const groupMap = new Map<
-    string,
-    CustomerQuoteListItem[]
-  >();
-
-  quotes.forEach((quote) => {
-    const current =
-      groupMap.get(
-        quote.bidding_request_id,
-      ) ?? [];
-
-    current.push(quote);
-
-    groupMap.set(
-      quote.bidding_request_id,
-      current,
-    );
-  });
-
-  return Array.from(
-    groupMap.entries(),
-  )
-    .map(
-      ([
-        biddingRequestId,
-        groupQuotes,
-      ]) => {
-        const sortedQuotes = [
-          ...groupQuotes,
-        ].sort(
-          (first, second) =>
-            first.total_amount -
-            second.total_amount,
-        );
-
-        const totalAmount =
-          groupQuotes.reduce(
-            (sum, quote) =>
-              sum +
-              quote.total_amount,
-            0,
-          );
-
-        const awardedQuote =
-          groupQuotes.find(
-            (quote) =>
-              quote.status ===
-              "awarded",
-          ) ?? null;
-
-        const latestSubmittedAt =
-          groupQuotes
-            .map(
-              (quote) =>
-                quote.submitted_at,
-            )
-            .filter(
-              (
-                value,
-              ): value is string =>
-                Boolean(value),
-            )
-            .sort()
-            .at(-1) ?? null;
-
-        return {
-          bidding_request_id:
-            biddingRequestId,
-          project_name:
-            groupQuotes[0]
-              ?.project_name ??
-            "프로젝트명 미확인",
-          due_date:
-            groupQuotes[0]
-              ?.due_date ?? null,
-          quotes: groupQuotes,
-          participant_count:
-            groupQuotes.length,
-          submitted_count:
-            groupQuotes.filter(
-              (quote) =>
-                quote.status !==
-                "rejected",
-            ).length,
-          lowest_amount:
-            sortedQuotes[0]
-              ?.total_amount ?? 0,
-          highest_amount:
-            sortedQuotes.at(-1)
-              ?.total_amount ?? 0,
-          average_amount:
-            groupQuotes.length > 0
-              ? Math.round(
-                  totalAmount /
-                    groupQuotes.length,
-                )
-              : 0,
-          awarded_partner_name:
-            awardedQuote
-              ?.partner_company_name ??
-            null,
-          status:
-            getRfqStatus(
-              groupQuotes,
-            ),
-          latest_submitted_at:
-            latestSubmittedAt,
-        };
-      },
-    )
-    .sort((first, second) => {
-      const firstTime =
-        first.latest_submitted_at
-          ? new Date(
-              first.latest_submitted_at,
-            ).getTime()
-          : 0;
-
-      const secondTime =
-        second.latest_submitted_at
-          ? new Date(
-              second.latest_submitted_at,
-            ).getTime()
-          : 0;
-
-      return secondTime - firstTime;
-    });
+function getEditActionInfo(
+  item: CustomerBiddingListItem,
+) {
+  return {
+    label:
+      item.display_status ===
+      "draft"
+        ? "계속 작성"
+        : "수정",
+    href: `/workspace/customer/bidding/request?id=${item.id}`,
+  };
 }
 
 export default function CustomerBiddingPage() {
   const {
-    quotes,
+    biddings,
     loading,
     error,
     refresh,
-  } = useSubmittedQuotes();
+  } =
+    useCustomerBiddingList();
 
   const [
     searchKeyword,
@@ -297,27 +158,129 @@ export default function CustomerBiddingPage() {
       "all",
     );
 
-  const rfqGroups = useMemo(
-    () =>
-      buildRfqGroups(quotes),
-    [quotes],
+  const [
+    deletingRequestId,
+    setDeletingRequestId,
+  ] = useState<string | null>(
+    null,
   );
 
-  const filteredGroups =
+  const activeBiddings =
+    useMemo(
+      () =>
+        biddings.filter(
+          (item) =>
+            item.request_status !==
+            "cancelled",
+        ),
+      [biddings],
+    );
+
+  const handleDeleteBidding =
+    async (
+      item: CustomerBiddingListItem,
+    ) => {
+      if (
+        item.display_status ===
+        "completed"
+      ) {
+        alert(
+          "선정 완료된 입찰요청은 삭제할 수 없습니다.",
+        );
+
+        return;
+      }
+
+      const message =
+        item.display_status ===
+        "draft"
+          ? [
+              "임시저장된 입찰요청을 삭제하시겠습니까?",
+              "",
+              "삭제된 임시저장은 복구할 수 없습니다.",
+            ].join("\n")
+          : [
+              "이 입찰요청을 취소하시겠습니까?",
+              "",
+              "공개된 RFQ는 이력 보존을 위해 실제 삭제되지 않고 취소 상태로 처리됩니다.",
+              "기존 제출 견적이 있다면 진행보류 처리됩니다.",
+            ].join("\n");
+
+      if (
+        !window.confirm(message)
+      ) {
+        return;
+      }
+
+      try {
+        setDeletingRequestId(
+          item.id,
+        );
+
+        const result =
+          await deleteBiddingRequest(
+            item.id,
+          );
+
+        if (
+          result.mode ===
+          "deleted"
+        ) {
+          alert(
+            "임시저장 입찰요청이 삭제되었습니다.",
+          );
+        } else if (
+          result.revision_required_quote_count >
+          0
+        ) {
+          alert(
+            [
+              "입찰요청이 취소되었습니다.",
+              "",
+              `기존 제출 견적 ${result.revision_required_quote_count}건은 진행보류 처리되었습니다.`,
+            ].join("\n"),
+          );
+        } else {
+          alert(
+            "입찰요청이 취소되었습니다.",
+          );
+        }
+
+        await refresh();
+      } catch (deleteError) {
+        console.error(
+          "입찰요청 삭제/취소 실패:",
+          deleteError,
+        );
+
+        alert(
+          deleteError instanceof Error
+            ? deleteError.message
+            : "입찰요청 삭제 중 오류가 발생했습니다.",
+        );
+      } finally {
+        setDeletingRequestId(
+          null,
+        );
+      }
+    };
+
+  const filteredBiddings =
     useMemo(() => {
       const keyword =
         searchKeyword
           .trim()
           .toLowerCase();
 
-      return rfqGroups.filter(
-        (group) => {
+      return activeBiddings.filter(
+        (item) => {
           const matchesKeyword =
             keyword.length === 0 ||
             [
-              group.bidding_request_id,
-              group.project_name,
-              group.awarded_partner_name ??
+              item.id,
+              item.project_name,
+              item
+                .selected_partner_company_name ??
                 "",
             ]
               .join(" ")
@@ -327,7 +290,7 @@ export default function CustomerBiddingPage() {
           const matchesStatus =
             statusFilter ===
               "all" ||
-            group.status ===
+            item.display_status ===
               statusFilter;
 
           return (
@@ -337,126 +300,102 @@ export default function CustomerBiddingPage() {
         },
       );
     }, [
-      rfqGroups,
+      activeBiddings,
       searchKeyword,
       statusFilter,
     ]);
 
   const summary = useMemo(() => {
-    const totalQuoteAmount =
-      quotes.reduce(
-        (sum, quote) =>
-          sum +
-          quote.total_amount,
-        0,
+    const submittedItems =
+      activeBiddings.filter(
+        (item) =>
+          item.submitted_count >
+          0,
       );
 
-    const awardedQuotes =
-      quotes.filter(
-        (quote) =>
-          quote.status ===
-          "awarded",
-      );
-
-    const lowestAwardedTotal =
-      awardedQuotes.reduce(
-        (sum, quote) =>
-          sum +
-          quote.total_amount,
-        0,
-      );
+    const averageQuote =
+      submittedItems.length > 0
+        ? Math.round(
+            submittedItems.reduce(
+              (sum, item) =>
+                sum +
+                (item.average_amount ??
+                  0),
+              0,
+            ) /
+              submittedItems.length,
+          )
+        : 0;
 
     const expectedSaving =
-      Math.max(
+      activeBiddings.reduce(
+        (sum, item) => {
+          if (
+            item.lowest_amount ===
+              null ||
+            item.highest_amount ===
+              null
+          ) {
+            return sum;
+          }
+
+          return (
+            sum +
+            Math.max(
+              0,
+              item.highest_amount -
+                item.lowest_amount,
+            )
+          );
+        },
         0,
-        totalQuoteAmount -
-          lowestAwardedTotal,
       );
 
     return {
       totalRfq:
-        rfqGroups.length,
-      totalParticipants:
-        quotes.length,
+        activeBiddings.length,
+
+      draft:
+        activeBiddings.filter(
+          (item) =>
+            item.display_status ===
+            "draft",
+        ).length,
+
+      waiting:
+        activeBiddings.filter(
+          (item) =>
+            item.display_status ===
+            "waiting",
+        ).length,
+
+      inProgress:
+        activeBiddings.filter(
+          (item) =>
+            item.display_status ===
+            "in_progress",
+        ).length,
+
       completed:
-        rfqGroups.filter(
-          (group) =>
-            group.status ===
+        activeBiddings.filter(
+          (item) =>
+            item.display_status ===
             "completed",
         ).length,
-      evaluating:
-        rfqGroups.filter(
-          (group) =>
-            group.status ===
-            "evaluating",
-        ).length,
-      averageQuote:
-        quotes.length > 0
-          ? Math.round(
-              totalQuoteAmount /
-                quotes.length,
-            )
-          : 0,
-      averageLeadDays: 0,
+
+      totalParticipants:
+        activeBiddings.reduce(
+          (sum, item) =>
+            sum +
+            item.participant_count,
+          0,
+        ),
+
+      averageQuote,
+
       expectedSaving,
     };
-  }, [
-    quotes,
-    rfqGroups,
-  ]);
-
-
-  const partnerRanking =
-    useMemo(() => {
-      const partnerMap =
-        new Map<
-          string,
-          {
-            name: string;
-            participationCount: number;
-            awardCount: number;
-          }
-        >();
-
-      quotes.forEach((quote) => {
-        const current =
-          partnerMap.get(
-            quote.partner_company_id,
-          ) ?? {
-            name:
-              quote.partner_company_name,
-            participationCount: 0,
-            awardCount: 0,
-          };
-
-        current.participationCount +=
-          1;
-
-        if (
-          quote.status ===
-          "awarded"
-        ) {
-          current.awardCount += 1;
-        }
-
-        partnerMap.set(
-          quote.partner_company_id,
-          current,
-        );
-      });
-
-      return Array.from(
-        partnerMap.values(),
-      )
-        .sort(
-          (first, second) =>
-            second.awardCount -
-              first.awardCount ||
-            second.participationCount -
-              first.participationCount,
-        )
-        .slice(0, 5);
-    }, [quotes]);
+  }, [activeBiddings]);
 
   if (loading) {
     return (
@@ -522,15 +461,14 @@ export default function CustomerBiddingPage() {
               </h1>
 
               <p className="mt-1 text-sm text-slate-600">
-                견적 요청부터 업체 비교와 선정까지
-                입찰 현황을 한눈에 확인합니다.
+                견적 요청부터 업체 비교와 선정까지 입찰 현황을 한눈에 확인합니다.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/workspace/customer/bidding/request"
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-700 shadow-sm transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
               >
                 <Plus size={14} />
                 입찰 요청하기
@@ -539,7 +477,7 @@ export default function CustomerBiddingPage() {
               <button
                 type="button"
                 disabled
-                className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-400 shadow-sm"
+                className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-400 shadow-sm"
               >
                 <Download size={14} />
                 엑셀 다운로드
@@ -551,7 +489,7 @@ export default function CustomerBiddingPage() {
             <KpiCard
               title="전체 입찰 요청"
               value={`${summary.totalRfq}건`}
-              description={`입찰중 ${summary.evaluating}건`}
+              description={`임시저장 ${summary.draft}건`}
               icon={FileText}
               tone="blue"
             />
@@ -559,7 +497,7 @@ export default function CustomerBiddingPage() {
             <KpiCard
               title="입찰 참여"
               value={`${summary.totalParticipants}건`}
-              description="제출 견적 기준"
+              description="Partner 참여 기준"
               icon={Users}
               tone="green"
             />
@@ -585,7 +523,7 @@ export default function CustomerBiddingPage() {
               value={formatCurrency(
                 summary.averageQuote,
               )}
-              description="VAT 별도"
+              description="제출 견적 기준"
               icon={WalletCards}
               tone="amber"
             />
@@ -603,131 +541,130 @@ export default function CustomerBiddingPage() {
               value={formatCurrency(
                 summary.expectedSaving,
               )}
-              description="선정 결과 기준"
+              description="최고가 대비 최저가"
               icon={PiggyBank}
               tone="rose"
             />
           </section>
 
-          <section className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="min-w-0">
-              <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <div className="border-b border-slate-200 px-5 pt-4">
-                  <div className="flex flex-wrap gap-7">
-                    {[
-                      {
-                        label: "전체",
-                        value: "all",
-                        count:
-                          rfqGroups.length,
-                      },
-                      {
-                        label: "입찰 대기",
-                        value:
-                          "in_progress",
-                        count:
-                          rfqGroups.filter(
-                            (group) =>
-                              group.status ===
-                              "in_progress",
-                          ).length,
-                      },
-                      {
-                        label: "입찰 중",
-                        value:
-                          "evaluating",
-                        count:
-                          rfqGroups.filter(
-                            (group) =>
-                              group.status ===
-                              "evaluating",
-                          ).length,
-                      },
-                      {
-                        label: "선정 완료",
-                        value:
-                          "completed",
-                        count:
-                          summary.completed,
-                      },
-                    ].map(
-                      (tab) => {
-                        const active =
-                          statusFilter ===
-                          tab.value;
+          <section className="mt-4">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 px-5 pt-4">
+                <div className="flex flex-wrap gap-7">
+                  {[
+                    {
+                      label: "전체",
+                      value: "all",
+                      count:
+                        activeBiddings.length,
+                    },
+                    {
+                      label: "임시저장",
+                      value: "draft",
+                      count:
+                        summary.draft,
+                    },
+                    {
+                      label: "입찰 대기",
+                      value: "waiting",
+                      count:
+                        summary.waiting,
+                    },
+                    {
+                      label: "입찰 중",
+                      value:
+                        "in_progress",
+                      count:
+                        summary.inProgress,
+                    },
+                    {
+                      label: "선정 완료",
+                      value:
+                        "completed",
+                      count:
+                        summary.completed,
+                    },
+                  ].map(
+                    (tab) => {
+                      const active =
+                        statusFilter ===
+                        tab.value;
 
-                        return (
-                          <button
-                            key={
-                              tab.value
-                            }
-                            type="button"
-                            onClick={() =>
-                              setStatusFilter(
-                                tab.value as BiddingStatusFilter,
-                              )
-                            }
-                            className={[
-                              "border-b-2 pb-3 text-xs font-bold transition",
-                              active
-                                ? "border-blue-600 text-blue-700"
-                                : "border-transparent text-slate-500 hover:text-slate-800",
-                            ].join(
-                              " ",
-                            )}
-                          >
-                            {tab.label} (
-                            {tab.count})
-                          </button>
-                        );
-                      },
-                    )}
-                  </div>
+                      return (
+                        <button
+                          key={
+                            tab.value
+                          }
+                          type="button"
+                          onClick={() =>
+                            setStatusFilter(
+                              tab.value as BiddingStatusFilter,
+                            )
+                          }
+                          className={[
+                            "border-b-2 pb-3 text-xs font-bold transition",
+                            active
+                              ? "border-blue-600 text-blue-700"
+                              : "border-transparent text-slate-500 hover:text-slate-800",
+                          ].join(
+                            " ",
+                          )}
+                        >
+                          {tab.label} (
+                          {tab.count})
+                        </button>
+                      );
+                    },
+                  )}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-xs font-bold text-slate-500">
+                    상태
+                  </span>
+
+                  <select
+                    value={
+                      statusFilter
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      setStatusFilter(
+                        event.target
+                          .value as BiddingStatusFilter,
+                      )
+                    }
+                    className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  >
+                    <option value="all">
+                      전체
+                    </option>
+                    <option value="draft">
+                      임시저장
+                    </option>
+                    <option value="waiting">
+                      입찰 대기
+                    </option>
+                    <option value="in_progress">
+                      입찰 중
+                    </option>
+                    <option value="completed">
+                      선정 완료
+                    </option>
+                  </select>
                 </div>
 
-                <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <span className="text-xs font-bold text-slate-500">
-                      상태
-                    </span>
+                <div className="flex w-full gap-2 xl:w-auto">
+                  <div className="relative min-w-0 flex-1 xl:w-[300px]">
+                    <Search
+                      size={14}
+                      className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                    />
 
-                    <select
-                      value={
-                        statusFilter
-                      }
-                      onChange={(
-                        event,
-                      ) =>
-                        setStatusFilter(
-                          event
-                            .target
-                            .value as BiddingStatusFilter,
-                        )
-                      }
-                      className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                    >
-                      <option value="all">
-                        전체
-                      </option>
-                      <option value="in_progress">
-                        입찰 대기
-                      </option>
-                      <option value="evaluating">
-                        입찰 중
-                      </option>
-                      <option value="completed">
-                        선정 완료
-                      </option>
-                    </select>
-                  </div>
-
-                  <div className="flex w-full gap-2 xl:w-auto">
-                    <div className="relative min-w-0 flex-1 xl:w-[300px]">
-                      <Search
-                        size={14}
-                        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                      />
-                      <input
+                    <input
                       type="search"
                       value={
                         searchKeyword
@@ -742,240 +679,311 @@ export default function CustomerBiddingPage() {
                       }
                       placeholder="프로젝트명, 입찰번호 검색"
                       className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-4 text-xs font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 xl:w-[300px]"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSearchKeyword(
-                          "",
-                        );
-                        setStatusFilter(
-                          "all",
-                        );
-                      }}
-                      className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
-                    >
-                      필터 초기화
-                    </button>
+                    />
                   </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchKeyword(
+                        "",
+                      );
+                      setStatusFilter(
+                        "all",
+                      );
+                    }}
+                    className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-xs font-bold text-slate-600 transition hover:bg-slate-50"
+                  >
+                    필터 초기화
+                  </button>
                 </div>
+              </div>
 
-                {filteredGroups.length ===
-                0 ? (
-                  <EmptyState />
-                ) : (
-                  <div className="g1-scroll-hide overflow-x-auto">
-                    <table className="w-full min-w-[1160px] border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 bg-[#f7f9fc]">
-                          <TableHeader align="center">
-                            No.
-                          </TableHeader>
-                          <TableHeader>
-                            입찰번호
-                          </TableHeader>
-                          <TableHeader>
-                            프로젝트명
-                          </TableHeader>
-                          <TableHeader>
-                            최근 제출일
-                          </TableHeader>
-                          <TableHeader>
-                            희망 납기
-                          </TableHeader>
-                          <TableHeader align="center">
-                            참여업체
-                          </TableHeader>
-                          <TableHeader align="right">
-                            최저가
-                          </TableHeader>
-                          <TableHeader align="center">
-                            상태
-                          </TableHeader>
-                          <TableHeader>
-                            선정업체
-                          </TableHeader>
-                          <TableHeader align="center">
-                            액션
-                          </TableHeader>
-                        </tr>
-                      </thead>
+              {filteredBiddings.length ===
+              0 ? (
+                <EmptyState
+                  statusFilter={
+                    statusFilter
+                  }
+                />
+              ) : (
+                <div className="g1-scroll-hide overflow-x-auto">
+                  <table className="w-full min-w-[1260px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-[#f7f9fc]">
+                        <TableHeader align="center">
+                          No.
+                        </TableHeader>
 
-                      <tbody>
-                        {filteredGroups.map(
-                          (
-                            group,
-                            index,
-                          ) => {
-                            const status =
-                              getBiddingStatusInfo(
-                                group.status,
-                              );
+                        <TableHeader>
+                          입찰번호
+                        </TableHeader>
 
-                            return (
-                              <tr
-                                key={
-                                  group.bidding_request_id
-                                }
-                                className="border-b border-slate-100 transition last:border-b-0 hover:bg-slate-50"
-                              >
-                                <TableCell align="center">
-                                  {index +
-                                    1}
-                                </TableCell>
+                        <TableHeader>
+                          프로젝트명
+                        </TableHeader>
 
-                                <TableCell>
-                                  <span className="font-bold text-blue-700">
-                                    {getShortCode(
-                                      group.bidding_request_id,
-                                    )}
-                                  </span>
-                                </TableCell>
+                        <TableHeader>
+                          요청일
+                        </TableHeader>
 
-                                <TableCell>
-                                  <p className="max-w-[240px] truncate font-bold text-slate-900">
-                                    {
-                                      group.project_name
-                                    }
-                                  </p>
-                                </TableCell>
+                        <TableHeader>
+                          입찰 마감
+                        </TableHeader>
 
-                                <TableCell>
-                                  {formatDate(
-                                    group.latest_submitted_at,
-                                  )}
-                                </TableCell>
+                        <TableHeader>
+                          희망 납기
+                        </TableHeader>
 
-                                <TableCell>
-                                  {formatDate(
-                                    group.due_date,
-                                  )}
-                                </TableCell>
+                        <TableHeader align="center">
+                          BOM
+                        </TableHeader>
 
-                                <TableCell align="center">
-                                  <span className="font-bold text-slate-800">
-                                    {
-                                      group.participant_count
-                                    }
-                                  </span>
-                                  <span className="text-slate-400">
-                                    {" "}
-                                    /{" "}
-                                    {
-                                      group.submitted_count
-                                    }
-                                  </span>
-                                </TableCell>
+                        <TableHeader align="center">
+                          참여 / 제출
+                        </TableHeader>
 
-                                <TableCell align="right">
-                                  <span className="font-extrabold text-slate-950">
-                                    {formatCurrency(
-                                      group.lowest_amount,
-                                    )}
-                                  </span>
+                        <TableHeader align="right">
+                          최저가
+                        </TableHeader>
 
-                                  {group.highest_amount >
-                                  group.lowest_amount ? (
-                                    <p className="mt-1 text-[11px] font-semibold text-emerald-600">
-                                      최고가 대비{" "}
-                                      {Math.round(
-                                        ((group.highest_amount -
-                                          group.lowest_amount) /
-                                          group.highest_amount) *
-                                          100,
-                                      )}
-                                      % 절감
-                                    </p>
-                                  ) : null}
-                                </TableCell>
+                        <TableHeader align="center">
+                          상태
+                        </TableHeader>
 
-                                <TableCell align="center">
-                                  <span
-                                    className={`inline-flex rounded-md px-2.5 py-1 text-xs font-bold ${status.className}`}
-                                  >
-                                    {
-                                      status.label
-                                    }
-                                  </span>
-                                </TableCell>
+                        <TableHeader>
+                          선정업체
+                        </TableHeader>
 
-                                <TableCell>
-                                  {group.awarded_partner_name ??
-                                    "-"}
-                                </TableCell>
+                        <TableHeader align="center">
+                          액션
+                        </TableHeader>
+                      </tr>
+                    </thead>
 
-                                <TableCell align="center">
-                                  <Link
-                                    href={`/workspace/customer/bidding/${group.bidding_request_id}`}
-                                    className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-                                  >
-                                    상세보기
-                                  </Link>
-                                </TableCell>
-                              </tr>
+                    <tbody>
+                      {filteredBiddings.map(
+                        (
+                          item,
+                          index,
+                        ) => {
+                          const status =
+                            getBiddingStatusInfo(
+                              item.display_status,
                             );
-                          },
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
 
-                <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
-                  <p className="text-xs font-bold text-slate-500">
-                    총{" "}
-                    {
-                      filteredGroups.length
-                    }
-                    건
-                  </p>
+                          const editAction =
+                            getEditActionInfo(
+                              item,
+                            );
 
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      disabled
-                      className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-300"
-                    >
-                      ‹
-                    </button>
+                          const isDeleting =
+                            deletingRequestId ===
+                            item.id;
 
-                    <button
-                      type="button"
-                      className="flex h-9 min-w-9 items-center justify-center rounded-md bg-slate-950 px-2 text-sm font-bold text-white"
-                    >
-                      1
-                    </button>
+                          return (
+                            <tr
+                              key={
+                                item.id
+                              }
+                              className="border-b border-slate-100 transition last:border-b-0 hover:bg-slate-50"
+                            >
+                              <TableCell align="center">
+                                {index +
+                                  1}
+                              </TableCell>
 
-                    <button
-                      type="button"
-                      disabled
-                      className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-300"
-                    >
-                      ›
-                    </button>
-                  </div>
+                              <TableCell>
+                                <span className="font-bold text-blue-700">
+                                  {getShortCode(
+                                    item.id,
+                                  )}
+                                </span>
+                              </TableCell>
+
+                              <TableCell>
+                                <p className="max-w-[240px] truncate font-bold text-slate-900">
+                                  {
+                                    item.project_name
+                                  }
+                                </p>
+                              </TableCell>
+
+                              <TableCell>
+                                {formatDate(
+                                  item.created_at,
+                                )}
+                              </TableCell>
+
+                              <TableCell>
+                                {formatDate(
+                                  item.bid_deadline,
+                                )}
+                              </TableCell>
+
+                              <TableCell>
+                                {formatDate(
+                                  item.due_date,
+                                )}
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <span className="font-bold text-slate-800">
+                                  {
+                                    item.bom_count
+                                  }
+                                </span>
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <span className="font-bold text-slate-800">
+                                  {
+                                    item.participant_count
+                                  }
+                                </span>
+
+                                <span className="text-slate-400">
+                                  {" "}
+                                  /{" "}
+                                  {
+                                    item.submitted_count
+                                  }
+                                </span>
+                              </TableCell>
+
+                              <TableCell align="right">
+                                <span className="font-extrabold text-slate-950">
+                                  {formatCurrency(
+                                    item.lowest_amount,
+                                  )}
+                                </span>
+
+                                {item.highest_amount !==
+                                  null &&
+                                item.lowest_amount !==
+                                  null &&
+                                item.highest_amount >
+                                  item.lowest_amount ? (
+                                  <p className="mt-1 text-[11px] font-semibold text-emerald-600">
+                                    최고가 대비{" "}
+                                    {Math.round(
+                                      ((item.highest_amount -
+                                        item.lowest_amount) /
+                                        item.highest_amount) *
+                                        100,
+                                    )}
+                                    % 절감
+                                  </p>
+                                ) : null}
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <span
+                                  className={`inline-flex rounded-md px-2.5 py-1 text-xs font-bold ${status.className}`}
+                                >
+                                  {
+                                    status.label
+                                  }
+                                </span>
+                              </TableCell>
+
+                              <TableCell>
+                                {item.selected_partner_company_name ??
+                                  "-"}
+                              </TableCell>
+
+                              <TableCell align="center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  {item.display_status !==
+                                  "completed" ? (
+                                    <>
+                                      <Link
+                                        href={
+                                          editAction.href
+                                        }
+                                        className="inline-flex h-8 items-center justify-center gap-1 rounded-md border border-blue-600 bg-blue-600 px-2.5 text-xs font-bold text-white transition hover:border-blue-700 hover:bg-blue-700"
+                                      >
+                                        <Pencil size={12} />
+                                        {
+                                          editAction.label
+                                        }
+                                      </Link>
+
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleDeleteBidding(
+                                            item,
+                                          )
+                                        }
+                                        disabled={
+                                          isDeleting
+                                        }
+                                        className="inline-flex h-8 items-center justify-center gap-1 rounded-md border border-red-200 bg-white px-2.5 text-xs font-bold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                                      >
+                                        <Trash2 size={12} />
+                                        {isDeleting
+                                          ? "처리중"
+                                          : "삭제"}
+                                      </button>
+                                    </>
+                                  ) : null}
+
+                                  {item.display_status !==
+                                  "draft" ? (
+                                    <Link
+                                      href={`/workspace/customer/bidding/${item.id}`}
+                                      className="inline-flex h-8 items-center justify-center rounded-md border border-slate-200 bg-white px-2.5 text-xs font-bold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                                    >
+                                      상세보기
+                                    </Link>
+                                  ) : null}
+                                </div>
+                              </TableCell>
+                            </tr>
+                          );
+                        },
+                      )}
+                    </tbody>
+                  </table>
                 </div>
-              </section>
-            </div>
+              )}
 
-            <aside className="space-y-4">
-              <PartnerRankingPanel
-                partners={
-                  partnerRanking
-                }
-              />
-
-              <section className="rounded-xl border border-blue-100 bg-blue-50 p-4">
-                <p className="text-xs leading-5 text-blue-800">
-                  입찰 선정은 품질,
-                  납기, 가격, 기술력,
-                  거래이력을 종합적으로
-                  평가하여 결정합니다.
+              <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
+                <p className="text-xs font-bold text-slate-500">
+                  총{" "}
+                  {
+                    filteredBiddings.length
+                  }
+                  건
                 </p>
-              </section>
-            </aside>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-300"
+                  >
+                    ‹
+                  </button>
+
+                  <button
+                    type="button"
+                    className="flex h-9 min-w-9 items-center justify-center rounded-md bg-slate-950 px-2 text-sm font-bold text-white"
+                  >
+                    1
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled
+                    className="flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-300"
+                  >
+                    ›
+                  </button>
+                </div>
+              </div>
+            </section>
           </section>
         </div>
       </div>
@@ -1003,12 +1011,18 @@ function KpiCard({
     | "rose";
 }) {
   const toneClassMap = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-emerald-50 text-emerald-600",
-    violet: "bg-violet-50 text-violet-600",
-    amber: "bg-amber-50 text-amber-600",
-    cyan: "bg-cyan-50 text-cyan-600",
-    rose: "bg-rose-50 text-rose-600",
+    blue:
+      "bg-blue-50 text-blue-600",
+    green:
+      "bg-emerald-50 text-emerald-600",
+    violet:
+      "bg-violet-50 text-violet-600",
+    amber:
+      "bg-amber-50 text-amber-600",
+    cyan:
+      "bg-cyan-50 text-cyan-600",
+    rose:
+      "bg-rose-50 text-rose-600",
   };
 
   return (
@@ -1038,80 +1052,26 @@ function KpiCard({
   );
 }
 
-function PartnerRankingPanel({
-  partners,
+function EmptyState({
+  statusFilter,
 }: {
-  partners: Array<{
-    name: string;
-    participationCount: number;
-    awardCount: number;
-  }>;
+  statusFilter:
+    BiddingStatusFilter;
 }) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-sm font-black text-slate-950">
-        참여 업체 TOP 5
-      </h2>
+  const description =
+    statusFilter === "draft"
+      ? "임시저장된 입찰요청이 없습니다."
+      : statusFilter ===
+          "waiting"
+        ? "Partner 견적 제출을 기다리는 입찰요청이 없습니다."
+        : statusFilter ===
+            "in_progress"
+          ? "현재 입찰 진행 중인 RFQ가 없습니다."
+          : statusFilter ===
+              "completed"
+            ? "선정 완료된 입찰요청이 없습니다."
+            : "등록된 입찰요청이 없습니다.";
 
-      {partners.length === 0 ? (
-        <p className="py-6 text-center text-xs text-slate-500">
-          참여 업체 데이터가 없습니다.
-        </p>
-      ) : (
-        <div className="g1-scroll-hide mt-4 overflow-hidden rounded-lg border border-slate-100">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="bg-slate-50 text-slate-500">
-                <th className="px-3 py-2 text-left">
-                  업체명
-                </th>
-                <th className="px-3 py-2 text-right">
-                  참여
-                </th>
-                <th className="px-3 py-2 text-right">
-                  선정
-                </th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {partners.map(
-                (partner) => (
-                  <tr
-                    key={
-                      partner.name
-                    }
-                    className="border-t border-slate-100"
-                  >
-                    <td className="max-w-[150px] truncate px-3 py-2.5 font-semibold text-slate-700">
-                      {
-                        partner.name
-                      }
-                    </td>
-
-                    <td className="px-3 py-2.5 text-right font-bold text-slate-700">
-                      {
-                        partner.participationCount
-                      }
-                    </td>
-
-                    <td className="px-3 py-2.5 text-right font-bold text-slate-900">
-                      {
-                        partner.awardCount
-                      }
-                    </td>
-                  </tr>
-                ),
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function EmptyState() {
   return (
     <div className="flex min-h-[380px] items-center justify-center px-6 py-12">
       <div className="max-w-md text-center">
@@ -1120,9 +1080,7 @@ function EmptyState() {
         </p>
 
         <p className="mt-2 text-sm leading-6 text-slate-500">
-          파트너가 견적을 제출하면 RFQ
-          기준으로 업체 수와 최저가가
-          자동 집계됩니다.
+          {description}
         </p>
       </div>
     </div>
@@ -1134,7 +1092,10 @@ function TableHeader({
   align = "left",
 }: {
   children: React.ReactNode;
-  align?: "left" | "center" | "right";
+  align?:
+    | "left"
+    | "center"
+    | "right";
 }) {
   const alignClass =
     align === "center"
@@ -1157,7 +1118,10 @@ function TableCell({
   align = "left",
 }: {
   children: React.ReactNode;
-  align?: "left" | "center" | "right";
+  align?:
+    | "left"
+    | "center"
+    | "right";
 }) {
   const alignClass =
     align === "center"

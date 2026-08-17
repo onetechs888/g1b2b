@@ -23,6 +23,9 @@ export default function CustomerBiddingRequestPage() {
     updateField,
 
     handleBomExcelUpload,
+    handleBomItemChange,
+    handleAddBomItem,
+    handleRemoveBomItem,
     handlePartFilesChange,
 
     handleCommonFileUpload,
@@ -69,6 +72,15 @@ export default function CustomerBiddingRequestPage() {
           disabled={isSaving}
           onExcelUpload={
             handleBomExcelUpload
+          }
+          onItemChange={
+            handleBomItemChange
+          }
+          onAddItem={
+            handleAddBomItem
+          }
+          onRemoveItem={
+            handleRemoveBomItem
           }
           onFilesChange={
             handlePartFilesChange

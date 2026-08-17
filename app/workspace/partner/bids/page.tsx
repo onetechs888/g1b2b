@@ -2,6 +2,22 @@
 
 import Link from "next/link";
 import {
+  BriefcaseBusiness,
+  Building2,
+  CalendarClock,
+  CheckCircle2,
+  ChevronRight,
+  Clock3,
+  FileSearch,
+  Filter,
+  FolderKanban,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+  TimerReset,
+  Users,
+} from "lucide-react";
+import {
   useEffect,
   useMemo,
   useState,
@@ -477,37 +493,6 @@ export default function PartnerBidsPage() {
         )
       : -1;
 
-  const tierDistribution =
-    useMemo(() => {
-      const distribution =
-        new Map<string, number>();
-
-      bids.forEach((bid) => {
-        const tier = getTierLabel(
-          bid.minimum_partner_tier,
-        );
-
-        distribution.set(
-          tier,
-          (distribution.get(tier) ?? 0) +
-            1,
-        );
-      });
-
-      return Array.from(
-        distribution.entries(),
-      )
-        .map(([tier, count]) => ({
-          tier,
-          count,
-        }))
-        .sort((first, second) =>
-          first.tier.localeCompare(
-            second.tier,
-          ),
-        );
-    }, [bids]);
-
   const lastUpdatedAt =
     useMemo(() => {
       if (bids.length === 0) {
@@ -539,8 +524,21 @@ export default function PartnerBidsPage() {
 
   return (
     <WorkspaceLayout role="partner">
-      <div className="min-h-full bg-[#f7f9fc]">
-        <div className="mx-auto w-full max-w-[1700px] px-5 py-5 lg:px-7">
+      <style>{`
+        .g1-scroll-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        .g1-scroll-hide::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      `}</style>
+
+      <div className="g1-scroll-hide min-h-full overflow-auto bg-[#f7f9fc]">
+        <div className="mx-auto w-full max-w-[1760px] px-5 py-5 lg:px-7">
           <PageHeader
             searchKeyword={searchKeyword}
             onSearchKeywordChange={
@@ -554,31 +552,31 @@ export default function PartnerBidsPage() {
           <section className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 2xl:grid-cols-4">
             <StatusSummaryCard
               tone="blue"
-              icon="참"
+              icon={FileSearch}
               title="전체 입찰"
               value={summary.totalCount}
               description="현재 조회된 공개 RFQ"
             />
 
             <StatusSummaryCard
-              tone="green"
-              icon="가"
+              tone="emerald"
+              icon={CheckCircle2}
               title="참여 가능"
               value={summary.availableCount}
               description="마감까지 8일 이상 남은 입찰"
             />
 
             <StatusSummaryCard
-              tone="orange"
-              icon="임"
+              tone="amber"
+              icon={CalendarClock}
               title="마감 임박"
               value={summary.urgentCount}
               description="7일 이내 마감되는 입찰"
             />
 
             <StatusSummaryCard
-              tone="red"
-              icon="마"
+              tone="rose"
+              icon={TimerReset}
               title="입찰 마감"
               value={summary.closedCount}
               description={`전체 BOM ${summary.totalBomCount.toLocaleString(
@@ -587,83 +585,43 @@ export default function PartnerBidsPage() {
             />
           </section>
 
-          <section className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="min-w-0 space-y-4">
-              <BidListPanel
-                bids={bids}
-                filteredBids={filteredBids}
-                isLoading={isLoading}
-                error={error}
-                selectedBidId={
-                  selectedBid?.id ?? null
-                }
-                deadlineFilter={
-                  deadlineFilter
-                }
-                tierFilter={tierFilter}
-                tierOptions={tierOptions}
-                onDeadlineFilterChange={
-                  setDeadlineFilter
-                }
-                onTierFilterChange={
-                  setTierFilter
-                }
-                onSelectBid={
-                  setSelectedBidId
-                }
-                onReload={reload}
-              />
+          <section className="mt-4 space-y-4">
+            <BidListPanel
+              bids={bids}
+              filteredBids={filteredBids}
+              isLoading={isLoading}
+              error={error}
+              selectedBidId={
+                selectedBid?.id ?? null
+              }
+              deadlineFilter={
+                deadlineFilter
+              }
+              tierFilter={tierFilter}
+              tierOptions={tierOptions}
+              onDeadlineFilterChange={
+                setDeadlineFilter
+              }
+              onTierFilterChange={
+                setTierFilter
+              }
+              onSelectBid={
+                setSelectedBidId
+              }
+              onReload={reload}
+            />
 
-              <SelectedBidPanel
-                bid={selectedBid}
-                rfqNumber={
-                  selectedBid
-                    ? getRfqNumber(
-                        selectedBid.id,
-                        selectedBidIndex,
-                      )
-                    : null
-                }
-              />
-            </div>
-
-            <aside className="space-y-4">
-              <BidStatusPanel
-                totalCount={
-                  summary.totalCount
-                }
-                availableCount={
-                  summary.availableCount
-                }
-                urgentCount={
-                  summary.urgentCount
-                }
-                closedCount={
-                  summary.closedCount
-                }
-              />
-
-              <TierStatusPanel
-                data={tierDistribution}
-                totalCount={
-                  summary.totalCount
-                }
-              />
-
-              <SelectedSummaryPanel
-                bid={selectedBid}
-                rfqNumber={
-                  selectedBid
-                    ? getRfqNumber(
-                        selectedBid.id,
-                        selectedBidIndex,
-                      )
-                    : null
-                }
-              />
-
-              <QuickLinksPanel />
-            </aside>
+            <SelectedBidPanel
+              bid={selectedBid}
+              rfqNumber={
+                selectedBid
+                  ? getRfqNumber(
+                      selectedBid.id,
+                      selectedBidIndex,
+                    )
+                  : null
+              }
+            />
           </section>
         </div>
       </div>
@@ -691,22 +649,26 @@ function PageHeader({
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <p className="text-xs font-semibold text-blue-700">
+        <p className="text-[11px] font-black text-blue-700">
           입찰관리 / 입찰목록
         </p>
 
-        <h1 className="mt-1 text-[26px] font-extrabold tracking-tight text-slate-950">
+        <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
           입찰목록
         </h1>
 
-        <p className="mt-1 text-sm text-slate-600">
-          참여 가능한 RFQ와 입찰 마감
-          현황을 확인할 수 있습니다.
+        <p className="mt-1 text-xs font-semibold text-slate-600">
+          참여 가능한 RFQ와 입찰 마감 현황을 확인할 수 있습니다.
         </p>
       </div>
 
-      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative">
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+
           <input
             type="search"
             value={searchKeyword}
@@ -716,38 +678,33 @@ function PageHeader({
               )
             }
             placeholder="프로젝트명, 고객사 검색"
-            className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-4 pr-11 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-[310px]"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-4 text-xs font-semibold text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-[300px]"
           />
-
-          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-lg text-slate-800">
-            ⌕
-          </span>
         </div>
 
         <button
           type="button"
           onClick={onReload}
           disabled={isLoading}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <span
+          <RefreshCw
+            size={14}
             className={
               isLoading
                 ? "animate-spin"
                 : ""
             }
-          >
-            ↻
-          </span>
+          />
 
           새로고침
         </button>
       </div>
 
       <div className="hidden w-full text-right lg:absolute lg:right-7 lg:top-[76px] lg:block lg:w-auto">
-        <p className="text-xs text-slate-500">
+        <p className="text-[11px] font-semibold text-slate-500">
           마지막 업데이트{" "}
-          <span className="font-medium text-slate-700">
+          <span className="font-bold text-slate-700">
             {lastUpdatedAt
               ? formatDateTime(
                   lastUpdatedAt,
@@ -763,10 +720,10 @@ function PageHeader({
 type StatusSummaryCardProps = {
   tone:
     | "blue"
-    | "green"
-    | "orange"
-    | "red";
-  icon: string;
+    | "emerald"
+    | "amber"
+    | "rose";
+  icon: React.ElementType;
   title: string;
   value: number;
   description: string;
@@ -774,61 +731,57 @@ type StatusSummaryCardProps = {
 
 function StatusSummaryCard({
   tone,
-  icon,
+  icon: Icon,
   title,
   value,
   description,
 }: StatusSummaryCardProps) {
-  const styles = {
+  const toneMap = {
     blue: {
-      icon: "bg-blue-600 text-white shadow-blue-200",
-      glow: "bg-blue-100",
+      icon: "bg-blue-50 text-blue-600",
+      ring: "ring-blue-100",
     },
-    green: {
-      icon: "bg-emerald-500 text-white shadow-emerald-200",
-      glow: "bg-emerald-100",
+    emerald: {
+      icon: "bg-emerald-50 text-emerald-600",
+      ring: "ring-emerald-100",
     },
-    orange: {
-      icon: "bg-orange-500 text-white shadow-orange-200",
-      glow: "bg-orange-100",
+    amber: {
+      icon: "bg-amber-50 text-amber-600",
+      ring: "ring-amber-100",
     },
-    red: {
-      icon: "bg-red-500 text-white shadow-red-200",
-      glow: "bg-red-100",
+    rose: {
+      icon: "bg-rose-50 text-rose-600",
+      ring: "ring-rose-100",
     },
   }[tone];
 
   return (
-    <article className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-5 py-5 shadow-sm">
-      <div
-        className={`absolute -right-7 -top-7 h-24 w-24 rounded-full opacity-60 ${styles.glow}`}
-      />
-
-      <div className="relative flex items-center gap-4">
+    <article className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div className="flex items-start gap-3">
         <div
-          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-black shadow-lg ${styles.icon}`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ${toneMap.icon} ${toneMap.ring}`}
         >
-          {icon}
+          <Icon size={18} />
         </div>
 
         <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-800">
+          <p className="text-xs font-black text-slate-600">
             {title}
           </p>
 
-          <div className="mt-1 flex items-end gap-1.5">
-            <strong className="text-[30px] font-black leading-none tracking-tight text-slate-950">
+          <div className="mt-2 flex items-end gap-1.5">
+            <strong className="text-2xl font-black leading-none tracking-tight text-slate-950">
               {value.toLocaleString(
                 "ko-KR",
               )}
             </strong>
 
-            <span className="pb-0.5 text-sm font-bold text-slate-600">
+            <span className="pb-0.5 text-xs font-black text-slate-500">
               건
             </span>
           </div>
 
-          <p className="mt-2 truncate text-xs text-slate-500">
+          <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-500">
             {description}
           </p>
         </div>
@@ -874,7 +827,7 @@ function BidListPanel({
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h2 className="text-lg font-extrabold text-slate-950">
+          <h2 className="text-base font-black text-slate-950">
             입찰 목록
           </h2>
 
@@ -888,7 +841,13 @@ function BidListPanel({
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row">
-          <select
+          <div className="relative">
+            <Filter
+              size={13}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+
+            <select
             value={deadlineFilter}
             onChange={(event) =>
               onDeadlineFilterChange(
@@ -896,7 +855,7 @@ function BidListPanel({
                   .value as DeadlineFilter,
               )
             }
-            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs font-bold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           >
             <option value="all">
               전체 상태
@@ -913,16 +872,23 @@ function BidListPanel({
             <option value="closed">
               입찰 마감
             </option>
-          </select>
+            </select>
+          </div>
 
-          <select
+          <div className="relative">
+            <ShieldCheck
+              size={13}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+            />
+
+            <select
             value={tierFilter}
             onChange={(event) =>
               onTierFilterChange(
                 event.target.value,
               )
             }
-            className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            className="h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs font-bold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
           >
             <option value="all">
               전체 Tier
@@ -936,7 +902,8 @@ function BidListPanel({
                 {getTierLabel(tier)}
               </option>
             ))}
-          </select>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -961,8 +928,8 @@ function BidListPanel({
         !error &&
         filteredBids.length > 0 && (
           <>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] border-collapse">
+            <div className="g1-scroll-hide overflow-x-auto">
+              <table className="w-full min-w-[1180px] border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200 bg-[#f7f9fc]">
                     <TableHeader>
@@ -1047,13 +1014,13 @@ function BidListPanel({
 
                           <TableCell>
                             <div className="max-w-[190px]">
-                              <p className="truncate text-sm font-bold text-slate-900">
+                              <p className="truncate text-xs font-black text-slate-900">
                                 {
                                   bid.project_name
                                 }
                               </p>
 
-                              <p className="mt-0.5 text-xs text-slate-400">
+                              <p className="mt-0.5 text-[10px] font-semibold text-slate-400">
                                 BOM{" "}
                                 {bid.bom_count.toLocaleString(
                                   "ko-KR",
@@ -1064,7 +1031,7 @@ function BidListPanel({
                           </TableCell>
 
                           <TableCell>
-                            <span className="text-sm font-semibold text-slate-700">
+                            <span className="text-xs font-bold text-slate-700">
                               {
                                 bid.customer_company_name
                               }
@@ -1084,7 +1051,7 @@ function BidListPanel({
                           </TableCell>
 
                           <TableCell>
-                            <span className="text-sm font-medium text-slate-700">
+                            <span className="text-xs font-semibold text-slate-700">
                               {formatDate(
                                 bid.bid_deadline,
                               )}
@@ -1092,7 +1059,7 @@ function BidListPanel({
                           </TableCell>
 
                           <TableCell>
-                            <span className="text-sm font-medium text-slate-700">
+                            <span className="text-xs font-semibold text-slate-700">
                               {formatDate(
                                 bid.due_date,
                               )}
@@ -1101,7 +1068,7 @@ function BidListPanel({
 
                           <TableCell align="center">
                             <span
-                              className={`text-sm font-black ${
+                              className={`text-xs font-black ${
                                 deadline.type ===
                                   "closed" ||
                                 deadline.type ===
@@ -1144,9 +1111,10 @@ function BidListPanel({
                               ) =>
                                 event.stopPropagation()
                               }
-                              className="inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 text-xs font-bold text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                              className="inline-flex h-8 items-center justify-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
                             >
                               상세보기
+                              <ChevronRight size={13} />
                             </Link>
                           </TableCell>
                         </tr>
@@ -1229,11 +1197,11 @@ function SelectedBidPanel({
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap items-center gap-3">
-          <strong className="text-xl font-black text-blue-700">
+          <strong className="text-base font-black text-blue-700">
             {rfqNumber}
           </strong>
 
-          <h2 className="text-xl font-extrabold text-slate-950">
+          <h2 className="text-base font-black text-slate-950">
             {bid.project_name}
           </h2>
 
@@ -1250,14 +1218,16 @@ function SelectedBidPanel({
 
         <Link
           href={`/workspace/partner/bids/${bid.id}`}
-          className="inline-flex h-9 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-bold text-white transition hover:bg-blue-700"
+          className="inline-flex h-8 items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 text-xs font-black text-white transition hover:bg-blue-700"
         >
           상세보기
+          <ChevronRight size={13} />
         </Link>
       </div>
 
       <div className="grid divide-y divide-slate-200 lg:grid-cols-5 lg:divide-x lg:divide-y-0">
         <SelectedInfoItem
+          icon={Building2}
           label="고객사"
           value={
             bid.customer_company_name
@@ -1265,6 +1235,7 @@ function SelectedBidPanel({
         />
 
         <SelectedInfoItem
+          icon={ShieldCheck}
           label="참여 가능 Tier"
           value={getTierLabel(
             bid.minimum_partner_tier,
@@ -1272,6 +1243,7 @@ function SelectedBidPanel({
         />
 
         <SelectedInfoItem
+          icon={CalendarClock}
           label="입찰 마감일"
           value={formatDate(
             bid.bid_deadline,
@@ -1282,6 +1254,7 @@ function SelectedBidPanel({
         />
 
         <SelectedInfoItem
+          icon={Clock3}
           label="납품 요청일"
           value={formatDate(
             bid.due_date,
@@ -1289,6 +1262,7 @@ function SelectedBidPanel({
         />
 
         <SelectedInfoItem
+          icon={FolderKanban}
           label="BOM 품목"
           value={`${bid.bom_count.toLocaleString(
             "ko-KR",
@@ -1296,35 +1270,35 @@ function SelectedBidPanel({
         />
       </div>
 
-      <div className="grid gap-0 border-t border-slate-200 lg:grid-cols-[1fr_1fr_300px]">
-        <div className="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
+      <div className="grid gap-0 border-t border-slate-200 lg:grid-cols-[1fr_1fr_260px]">
+        <div className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
           <p className="text-xs font-bold text-slate-500">
             요청 설명
           </p>
 
-          <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+          <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-700">
             {bid.description ||
               "등록된 요청 설명이 없습니다."}
           </p>
         </div>
 
-        <div className="border-b border-slate-200 p-5 lg:border-b-0 lg:border-r">
+        <div className="border-b border-slate-200 p-4 lg:border-b-0 lg:border-r">
           <p className="text-xs font-bold text-slate-500">
             고객 메모
           </p>
 
-          <p className="mt-3 line-clamp-4 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+          <p className="mt-2 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-700">
             {bid.memo ||
               "등록된 고객 메모가 없습니다."}
           </p>
         </div>
 
-        <div className="p-5">
+        <div className="p-4">
           <p className="text-xs font-bold text-slate-500">
             입찰 검토
           </p>
 
-          <p className="mt-3 text-sm font-bold text-slate-900">
+          <p className="mt-2 text-xs font-black text-slate-900">
             RFQ 상세정보와 BOM을
             확인해 주세요.
           </p>
@@ -1336,9 +1310,10 @@ function SelectedBidPanel({
 
           <Link
             href={`/workspace/partner/bids/${bid.id}`}
-            className="mt-4 inline-flex h-9 w-full items-center justify-center rounded-lg border border-blue-200 bg-blue-50 text-sm font-bold text-blue-700 transition hover:bg-blue-100"
+            className="mt-3 inline-flex h-8 w-full items-center justify-center gap-1 rounded-lg border border-blue-200 bg-blue-50 text-xs font-black text-blue-700 transition hover:bg-blue-100"
           >
-            RFQ 검토하기 →
+            RFQ 검토하기
+            <ChevronRight size={13} />
           </Link>
         </div>
       </div>
@@ -1347,370 +1322,42 @@ function SelectedBidPanel({
 }
 
 type SelectedInfoItemProps = {
+  icon: React.ElementType;
   label: string;
   value: string;
   subValue?: string;
 };
 
 function SelectedInfoItem({
+  icon: Icon,
   label,
   value,
   subValue,
 }: SelectedInfoItemProps) {
   return (
-    <div className="px-5 py-4">
-      <p className="text-xs font-bold text-slate-500">
-        {label}
-      </p>
+    <div className="flex items-center gap-3 px-5 py-3">
+      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-500">
+        <Icon size={15} />
+      </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <p className="text-sm font-extrabold text-slate-900">
-          {value}
+      <div className="min-w-0">
+        <p className="text-[11px] font-bold text-slate-500">
+          {label}
         </p>
 
-        {subValue && (
-          <span className="text-xs font-black text-red-600">
-            {subValue}
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-type BidStatusPanelProps = {
-  totalCount: number;
-  availableCount: number;
-  urgentCount: number;
-  closedCount: number;
-};
-
-function BidStatusPanel({
-  totalCount,
-  availableCount,
-  urgentCount,
-  closedCount,
-}: BidStatusPanelProps) {
-  const unknownCount = Math.max(
-    totalCount -
-      availableCount -
-      urgentCount -
-      closedCount,
-    0,
-  );
-
-  const items = [
-    {
-      label: "참여 가능",
-      value: availableCount,
-      dotClassName: "bg-emerald-500",
-    },
-    {
-      label: "마감 임박",
-      value: urgentCount,
-      dotClassName: "bg-amber-500",
-    },
-    {
-      label: "입찰 마감",
-      value: closedCount,
-      dotClassName: "bg-red-500",
-    },
-    {
-      label: "마감일 미정",
-      value: unknownCount,
-      dotClassName: "bg-slate-400",
-    },
-  ];
-
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
-        입찰 현황
-      </h2>
-
-      <div className="mt-5 flex items-center gap-5">
-        <div className="relative flex h-28 w-28 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(#10b981_0_35%,#f59e0b_35%_60%,#ef4444_60%_85%,#94a3b8_85%_100%)]">
-          <div className="flex h-[72px] w-[72px] flex-col items-center justify-center rounded-full bg-white">
-            <strong className="text-2xl font-black text-slate-950">
-              {totalCount}
-            </strong>
-
-            <span className="text-[11px] font-semibold text-slate-500">
-              전체
-            </span>
-          </div>
-        </div>
-
-        <div className="min-w-0 flex-1 space-y-3">
-          {items.map((item) => {
-            const percentage =
-              totalCount > 0
-                ? Math.round(
-                    (item.value /
-                      totalCount) *
-                      100,
-                  )
-                : 0;
-
-            return (
-              <div
-                key={item.label}
-                className="flex items-center justify-between gap-3"
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <span
-                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${item.dotClassName}`}
-                  />
-
-                  <span className="truncate text-xs font-semibold text-slate-700">
-                    {item.label}
-                  </span>
-                </div>
-
-                <span className="whitespace-nowrap text-xs font-bold text-slate-800">
-                  {item.value}건 (
-                  {percentage}%)
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-type TierStatusPanelProps = {
-  data: {
-    tier: string;
-    count: number;
-  }[];
-  totalCount: number;
-};
-
-function TierStatusPanel({
-  data,
-  totalCount,
-}: TierStatusPanelProps) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
-        Tier 현황
-      </h2>
-
-      <div className="mt-5 space-y-4">
-        {data.length === 0 ? (
-          <p className="py-5 text-center text-xs text-slate-500">
-            등록된 Tier 정보가 없습니다.
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <p className="text-xs font-black text-slate-900">
+            {value}
           </p>
-        ) : (
-          data.map((item, index) => {
-            const percentage =
-              totalCount > 0
-                ? Math.round(
-                    (item.count /
-                      totalCount) *
-                      100,
-                  )
-                : 0;
 
-            const barClassNames = [
-              "bg-violet-500",
-              "bg-purple-500",
-              "bg-blue-500",
-              "bg-emerald-500",
-              "bg-orange-500",
-              "bg-slate-500",
-            ];
-
-            return (
-              <div
-                key={item.tier}
-                className="grid grid-cols-[76px_1fr_48px] items-center gap-3"
-              >
-                <span className="text-xs font-bold text-slate-700">
-                  {item.tier}
-                </span>
-
-                <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    className={`h-full rounded-full ${
-                      barClassNames[
-                        index %
-                          barClassNames.length
-                      ]
-                    }`}
-                    style={{
-                      width: `${Math.max(
-                        percentage,
-                        4,
-                      )}%`,
-                    }}
-                  />
-                </div>
-
-                <span className="text-right text-xs font-bold text-slate-600">
-                  {item.count}건
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
-    </section>
-  );
-}
-
-type SelectedSummaryPanelProps = {
-  bid: PartnerOpenBiddingRequest | null;
-  rfqNumber: string | null;
-};
-
-function SelectedSummaryPanel({
-  bid,
-  rfqNumber,
-}: SelectedSummaryPanelProps) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
-        선택 RFQ
-      </h2>
-
-      {!bid || !rfqNumber ? (
-        <p className="py-6 text-center text-xs text-slate-500">
-          목록에서 RFQ를 선택해 주세요.
-        </p>
-      ) : (
-        <div className="mt-4">
-          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
-            <p className="text-sm font-black text-blue-700">
-              {rfqNumber}
-            </p>
-
-            <p className="mt-1 truncate text-base font-extrabold text-slate-950">
-              {bid.project_name}
-            </p>
-
-            <p className="mt-1 text-xs font-medium text-slate-600">
-              {bid.customer_company_name}
-            </p>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            <SummaryLine
-              label="입찰 마감"
-              value={formatDate(
-                bid.bid_deadline,
-              )}
-            />
-
-            <SummaryLine
-              label="납품 요청"
-              value={formatDate(
-                bid.due_date,
-              )}
-            />
-
-            <SummaryLine
-              label="참여 Tier"
-              value={getTierLabel(
-                bid.minimum_partner_tier,
-              )}
-            />
-
-            <SummaryLine
-              label="BOM"
-              value={`${bid.bom_count.toLocaleString(
-                "ko-KR",
-              )}개`}
-            />
-          </div>
+          {subValue && (
+            <span className="text-[11px] font-black text-red-600">
+              {subValue}
+            </span>
+          )}
         </div>
-      )}
-    </section>
-  );
-}
-
-type SummaryLineProps = {
-  label: string;
-  value: string;
-};
-
-function SummaryLine({
-  label,
-  value,
-}: SummaryLineProps) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
-      <span className="text-xs font-medium text-slate-500">
-        {label}
-      </span>
-
-      <span className="text-right text-xs font-bold text-slate-800">
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function QuickLinksPanel() {
-  const quickLinks = [
-    {
-      label: "견적목록",
-      href: "/workspace/partner/quotes",
-      icon: "견",
-    },
-    {
-      label: "프로젝트",
-      href: "/workspace/partner",
-      icon: "P",
-    },
-    {
-      label: "생산관리",
-      href: "/workspace/partner/production",
-      icon: "생",
-    },
-    {
-      label: "품질관리",
-      href: "/workspace/partner/quality",
-      icon: "품",
-    },
-    {
-      label: "출하관리",
-      href: "/workspace/partner/shipping",
-      icon: "출",
-    },
-    {
-      label: "문서관리",
-      href: "/workspace/partner/documents",
-      icon: "문",
-    },
-  ];
-
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
-        바로가기
-      </h2>
-
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        {quickLinks.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="flex min-h-[82px] flex-col items-center justify-center rounded-lg border border-slate-100 bg-slate-50 px-2 py-3 text-center transition hover:border-blue-200 hover:bg-blue-50"
-          >
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-white text-xs font-black text-blue-700 shadow-sm">
-              {item.icon}
-            </span>
-
-            <span className="mt-2 text-[11px] font-bold text-slate-700">
-              {item.label}
-            </span>
-          </Link>
-        ))}
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -1801,7 +1448,7 @@ function TableHeader({
 
   return (
     <th
-      className={`whitespace-nowrap px-4 py-3 text-xs font-extrabold text-slate-600 ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3 text-xs font-black text-slate-600 ${alignClass}`}
     >
       {children}
     </th>
@@ -1826,7 +1473,7 @@ function TableCell({
 
   return (
     <td
-      className={`whitespace-nowrap px-4 py-3.5 align-middle ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3 align-middle text-xs ${alignClass}`}
     >
       {children}
     </td>

@@ -1,9 +1,14 @@
 "use client";
 
 import {
+  useCallback,
+  useEffect,
   useState,
   type ChangeEvent,
 } from "react";
+import {
+  useSearchParams,
+} from "next/navigation";
 
 import {
   parseBomWorkbook,
@@ -22,8 +27,12 @@ import type {
 } from "@/lib/sourcing/types";
 
 import {
+  getBiddingRequestForEdit,
   saveBiddingRequestDraft,
   submitBiddingRequest,
+  submitExistingBiddingRequest,
+  updateBiddingRequest,
+  type EditableBiddingRequestStatus,
 } from "@/services/customer/biddingRequestService";
 
 const initialForm: BiddingForm = {
@@ -41,6 +50,18 @@ const allowedCommonFileExtensions: SourcingFileExtension[] = [
   "step",
   "stp",
 ];
+
+const editableBomFields = [
+  "partNo",
+  "partName",
+  "quantity",
+  "material",
+  "specification",
+  "memo",
+] as const;
+
+type EditableBomField =
+  (typeof editableBomFields)[number];
 
 const getFileExtension = (
   fileName: string,
@@ -65,7 +86,7 @@ const getFileExtension = (
   return "unknown";
 };
 
-const createTemporaryFileId = () => {
+const createTemporaryId = () => {
   if (
     typeof crypto !== "undefined" &&
     typeof crypto.randomUUID === "function"
@@ -81,7 +102,16 @@ const createTemporaryFileId = () => {
   ].join("-");
 };
 
+const createTemporaryFileId =
+  createTemporaryId;
+
 export function useBiddingRequest() {
+  const searchParams =
+    useSearchParams();
+
+  const queryRequestId =
+    searchParams.get("id");
+
   const [form, setForm] =
     useState<BiddingForm>(
       initialForm,
@@ -100,12 +130,101 @@ export function useBiddingRequest() {
   >([]);
 
   const [
+    editingRequestId,
+    setEditingRequestId,
+  ] = useState<string | null>(
+    queryRequestId,
+  );
+
+  const [
+    requestStatus,
+    setRequestStatus,
+  ] =
+    useState<EditableBiddingRequestStatus | null>(
+      null,
+    );
+
+  const [
+    isLoadingRequest,
+    setIsLoadingRequest,
+  ] = useState(
+    Boolean(queryRequestId),
+  );
+
+  const [
     isReadingBom,
     setIsReadingBom,
   ] = useState(false);
 
   const [isSaving, setIsSaving] =
     useState(false);
+
+  const isEditMode =
+    Boolean(editingRequestId);
+
+  const loadEditingRequest =
+    useCallback(async (
+      biddingRequestId: string,
+    ) => {
+      try {
+        setIsLoadingRequest(true);
+
+        const result =
+          await getBiddingRequestForEdit(
+            biddingRequestId,
+          );
+
+        setEditingRequestId(
+          result.id,
+        );
+
+        setRequestStatus(
+          result.status,
+        );
+
+        setForm(
+          result.form,
+        );
+
+        setBomItems(
+          result.bomItems,
+        );
+
+        /**
+         * 기존 Part/Common 파일 복원 기능은
+         * 현재 Service 연결 범위에 포함되어 있지 않으므로
+         * 기존 업로드 상태를 임의로 생성하지 않습니다.
+         */
+        setCommonFiles([]);
+      } catch (error) {
+        console.error(
+          "입찰요청 수정 데이터 조회 실패:",
+          error,
+        );
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "입찰요청 정보를 불러오지 못했습니다.";
+
+        alert(message);
+      } finally {
+        setIsLoadingRequest(false);
+      }
+    }, []);
+
+  useEffect(() => {
+    if (!queryRequestId) {
+      return;
+    }
+
+    void loadEditingRequest(
+      queryRequestId,
+    );
+  }, [
+    queryRequestId,
+    loadEditingRequest,
+  ]);
 
   const updateField = (
     field: keyof BiddingForm,
@@ -148,11 +267,6 @@ export function useBiddingRequest() {
           sourcingBomItems,
         );
 
-        console.log(
-          "G1 BOM Import Result:",
-          result,
-        );
-
         const warningMessage =
           result.warnings.length > 0
             ? [
@@ -168,6 +282,8 @@ export function useBiddingRequest() {
             `BOM ${result.items.length}개 품목을 불러왔습니다.`,
             `시트: ${result.sheetName}`,
             `헤더 행: ${result.headerRowNumber}`,
+            "",
+            "불러온 BOM은 제출 전 수정할 수 있습니다.",
           ].join("\n") +
             warningMessage,
         );
@@ -177,21 +293,21 @@ export function useBiddingRequest() {
           error,
         );
 
-        const message =
+        alert(
           error instanceof Error
             ? error.message
-            : "BOM 엑셀을 읽는 중 오류가 발생했습니다.";
-
-        alert(message);
+            : "BOM 엑셀을 읽는 중 오류가 발생했습니다.",
+        );
       } finally {
         setIsReadingBom(false);
         event.target.value = "";
       }
     };
 
-  const handlePartFilesChange = (
+  const handleBomItemChange = (
     tempId: string,
-    files: UploadedPartFile[],
+    field: EditableBomField,
+    value: string | number,
   ) => {
     setBomItems(
       (previousItems) =>
@@ -203,11 +319,100 @@ export function useBiddingRequest() {
               return item;
             }
 
+            if (
+              field === "quantity"
+            ) {
+              const numericValue =
+                typeof value === "number"
+                  ? value
+                  : Number(value);
+
+              return {
+                ...item,
+                quantity:
+                  Number.isFinite(
+                    numericValue,
+                  )
+                    ? Math.max(
+                        0,
+                        numericValue,
+                      )
+                    : 0,
+              };
+            }
+
             return {
               ...item,
-              files,
+              [field]:
+                String(value),
             };
           },
+        ),
+    );
+  };
+
+  const handleAddBomItem = () => {
+    setBomItems(
+      (previousItems) => {
+        const manualItemCount =
+          previousItems.filter(
+            (item) =>
+              item.sourceSheetName ===
+              "MANUAL",
+          ).length;
+
+        const nextItem:
+          SourcingBomItem = {
+          tempId:
+            createTemporaryId(),
+          sourceSheetName:
+            "MANUAL",
+          sourceRowNumber:
+            manualItemCount + 1,
+          partNo: "",
+          partName: "",
+          quantity: 1,
+          material: "",
+          specification: "",
+          unitPrice: null,
+          memo: "",
+          files: [],
+        };
+
+        return [
+          ...previousItems,
+          nextItem,
+        ];
+      },
+    );
+  };
+
+  const handleRemoveBomItem = (
+    tempId: string,
+  ) => {
+    setBomItems(
+      (previousItems) =>
+        previousItems.filter(
+          (item) =>
+            item.tempId !== tempId,
+        ),
+    );
+  };
+
+  const handlePartFilesChange = (
+    tempId: string,
+    files: UploadedPartFile[],
+  ) => {
+    setBomItems(
+      (previousItems) =>
+        previousItems.map(
+          (item) =>
+            item.tempId === tempId
+              ? {
+                  ...item,
+                  files,
+                }
+              : item,
         ),
     );
   };
@@ -226,18 +431,12 @@ export function useBiddingRequest() {
 
     const invalidFiles =
       selectedFileArray.filter(
-        (file) => {
-          const extension =
+        (file) =>
+          !allowedCommonFileExtensions.includes(
             getFileExtension(
               file.name,
-            );
-
-          return (
-            !allowedCommonFileExtensions.includes(
-              extension,
-            )
-          );
-        },
+            ),
+          ),
       );
 
     if (
@@ -258,13 +457,17 @@ export function useBiddingRequest() {
       return;
     }
 
-    const newFiles: UploadedCommonFile[] =
+    const newFiles:
+      UploadedCommonFile[] =
       selectedFileArray.map(
         (file) => ({
-          id: createTemporaryFileId(),
+          id:
+            createTemporaryFileId(),
           file,
-          fileName: file.name,
-          fileSize: file.size,
+          fileName:
+            file.name,
+          fileSize:
+            file.size,
           mimeType:
             file.type ||
             "application/octet-stream",
@@ -272,8 +475,10 @@ export function useBiddingRequest() {
             getFileExtension(
               file.name,
             ),
-          status: "ready",
-          uploadedAt: new Date(),
+          status:
+            "ready",
+          uploadedAt:
+            new Date(),
         }),
       );
 
@@ -315,6 +520,34 @@ export function useBiddingRequest() {
     return true;
   };
 
+  const validateBomItems = () => {
+    const invalidItemIndex =
+      bomItems.findIndex(
+        (item) =>
+          !item.partName.trim() ||
+          !Number.isFinite(
+            item.quantity,
+          ) ||
+          item.quantity <= 0,
+      );
+
+    if (
+      invalidItemIndex >= 0
+    ) {
+      alert(
+        [
+          `BOM ${invalidItemIndex + 1}번 품목을 확인해 주세요.`,
+          "",
+          "품명은 필수이며 수량은 1 이상이어야 합니다.",
+        ].join("\n"),
+      );
+
+      return false;
+    }
+
+    return true;
+  };
+
   const validateSubmit = () => {
     if (
       !form.projectName.trim()
@@ -322,7 +555,6 @@ export function useBiddingRequest() {
       alert(
         "프로젝트명을 입력해 주세요.",
       );
-
       return false;
     }
 
@@ -330,7 +562,6 @@ export function useBiddingRequest() {
       alert(
         "입찰 마감일을 선택해 주세요.",
       );
-
       return false;
     }
 
@@ -338,7 +569,6 @@ export function useBiddingRequest() {
       alert(
         "희망 납기일을 선택해 주세요.",
       );
-
       return false;
     }
 
@@ -346,13 +576,12 @@ export function useBiddingRequest() {
       bomItems.length === 0
     ) {
       alert(
-        "BOM 엑셀을 업로드해 주세요.",
+        "BOM 엑셀을 업로드하거나 품목을 직접 추가해 주세요.",
       );
-
       return false;
     }
 
-    return true;
+    return validateBomItems();
   };
 
   const handleTemporarySave =
@@ -364,24 +593,41 @@ export function useBiddingRequest() {
       try {
         setIsSaving(true);
 
+        if (editingRequestId) {
+          const result =
+            await updateBiddingRequest({
+              biddingRequestId:
+                editingRequestId,
+              form,
+              bomItems,
+            });
+
+          setRequestStatus(
+            result.status,
+          );
+
+          alert(
+            result.revision_required_quote_count >
+              0
+              ? `입찰요청이 수정되었습니다.\n\n기존 제출 견적 ${result.revision_required_quote_count}건은 진행보류 처리되었습니다.`
+              : "입찰요청이 수정되었습니다.",
+          );
+
+          return;
+        }
+
         const savedBidding =
           await saveBiddingRequestDraft(
             form,
+            bomItems,
           );
 
-        console.log(
-          "입찰 임시저장 완료:",
-          savedBidding,
+        setEditingRequestId(
+          savedBidding.id,
         );
 
-        console.log(
-          "현재 BOM 품목:",
-          bomItems,
-        );
-
-        console.log(
-          "현재 공통 첨부파일:",
-          commonFiles,
+        setRequestStatus(
+          savedBidding.status,
         );
 
         alert(
@@ -389,16 +635,15 @@ export function useBiddingRequest() {
         );
       } catch (error) {
         console.error(
-          "입찰 임시저장 실패:",
+          "입찰 임시저장/수정 실패:",
           error,
         );
 
-        const message =
+        alert(
           error instanceof Error
             ? error.message
-            : "입찰요청 저장 중 오류가 발생했습니다.";
-
-        alert(message);
+            : "입찰요청 저장 중 오류가 발생했습니다.",
+        );
       } finally {
         setIsSaving(false);
       }
@@ -413,46 +658,81 @@ export function useBiddingRequest() {
       try {
         setIsSaving(true);
 
+        if (
+          editingRequestId &&
+          requestStatus ===
+            "draft"
+        ) {
+          const result =
+            await submitExistingBiddingRequest({
+              biddingRequestId:
+                editingRequestId,
+              form,
+              bomItems,
+            });
+
+          setRequestStatus(
+            result.status,
+          );
+
+          alert(
+            "RFQ 요청이 정상적으로 등록되었습니다.\n\n파트너가 이제 입찰할 수 있습니다.",
+          );
+
+          return;
+        }
+
+        if (editingRequestId) {
+          const result =
+            await updateBiddingRequest({
+              biddingRequestId:
+                editingRequestId,
+              form,
+              bomItems,
+            });
+
+          setRequestStatus(
+            result.status,
+          );
+
+          alert(
+            result.revision_required_quote_count >
+              0
+              ? `RFQ가 수정되었습니다.\n\n기존 제출 견적 ${result.revision_required_quote_count}건은 진행보류 처리되었습니다.`
+              : "RFQ가 수정되었습니다.",
+          );
+
+          return;
+        }
+
         const savedBidding =
           await submitBiddingRequest({
             form,
             bomItems,
           });
 
-        console.log(
-          "RFQ 요청 완료:",
-          savedBidding,
+        setEditingRequestId(
+          savedBidding.id,
         );
 
-        console.log(
-          "제출 BOM 품목:",
-          bomItems,
-        );
-
-        console.log(
-          "제출 공통 첨부파일:",
-          commonFiles,
+        setRequestStatus(
+          savedBidding.status,
         );
 
         alert(
           "RFQ 요청이 정상적으로 등록되었습니다.\n\n파트너가 이제 입찰할 수 있습니다.",
         );
-
-        setForm(initialForm);
-        setBomItems([]);
-        setCommonFiles([]);
       } catch (error) {
         console.error(
-          "RFQ 요청 실패:",
+          "RFQ 요청/수정 실패:",
           error,
         );
 
-        const message =
+        alert(
           error instanceof Error
             ? error.message
-            : "RFQ 요청 중 오류가 발생했습니다.";
-
-        alert(message);
+            : "RFQ 요청 중 오류가 발생했습니다.",
+        );
       } finally {
         setIsSaving(false);
       }
@@ -463,12 +743,19 @@ export function useBiddingRequest() {
     bomItems,
     commonFiles,
 
+    editingRequestId,
+    requestStatus,
+    isEditMode,
+    isLoadingRequest,
     isReadingBom,
     isSaving,
 
     updateField,
 
     handleBomExcelUpload,
+    handleBomItemChange,
+    handleAddBomItem,
+    handleRemoveBomItem,
     handlePartFilesChange,
 
     handleCommonFileUpload,
