@@ -2,6 +2,18 @@
 
 import Link from "next/link";
 import {
+  ChevronRight,
+  ChevronDown,
+  Clock3,
+  FileText,
+  Filter,
+  RefreshCw,
+  Search,
+  Send,
+  Trophy,
+  XCircle,
+} from "lucide-react";
+import {
   useMemo,
   useState,
 } from "react";
@@ -164,9 +176,20 @@ function getQuoteAction(
       };
 
     case "awarded":
+      if (!quote.project_code) {
+        return {
+          label: "프로젝트 확인 중",
+          href: "#",
+          disabled: true,
+          primary: false,
+        };
+      }
+
       return {
         label: "프로젝트 이동",
-        href: "/workspace/partner/projects",
+        href: `/workspace/partner/production?project=${encodeURIComponent(
+          quote.project_code,
+        )}`,
         disabled: false,
         primary: true,
       };
@@ -198,11 +221,6 @@ export default function PartnerQuotesPage() {
     statusFilter,
     setStatusFilter,
   ] = useState<QuoteStatusFilter>("all");
-
-  const [
-    selectedQuoteId,
-    setSelectedQuoteId,
-  ] = useState<string | null>(null);
 
   const filteredQuotes = useMemo(() => {
     const normalizedKeyword =
@@ -253,50 +271,6 @@ export default function PartnerQuotesPage() {
     };
   }, [quotes]);
 
-  const selectedQuote = useMemo(() => {
-    if (filteredQuotes.length === 0) {
-      return null;
-    }
-
-    if (!selectedQuoteId) {
-      return filteredQuotes[0];
-    }
-
-    return (
-      filteredQuotes.find(
-        (quote) =>
-          quote.id === selectedQuoteId,
-      ) ?? filteredQuotes[0]
-    );
-  }, [filteredQuotes, selectedQuoteId]);
-
-  const recentResults = useMemo(() => {
-    return [...quotes]
-      .filter(
-        (quote) =>
-          quote.status === "awarded" ||
-          quote.status === "rejected",
-      )
-      .sort((first, second) => {
-        const firstTime =
-          first.updated_at
-            ? new Date(
-                first.updated_at,
-              ).getTime()
-            : 0;
-
-        const secondTime =
-          second.updated_at
-            ? new Date(
-                second.updated_at,
-              ).getTime()
-            : 0;
-
-        return secondTime - firstTime;
-      })
-      .slice(0, 5);
-  }, [quotes]);
-
   const lastUpdatedAt = useMemo(() => {
     const timestamps = quotes
       .map((quote) => {
@@ -330,9 +304,12 @@ export default function PartnerQuotesPage() {
     return (
       <WorkspaceLayout role="partner">
         <div className="flex min-h-[420px] items-center justify-center bg-[#f7f9fc] px-6">
-          <p className="text-sm font-semibold text-slate-600">
-            견적목록을 불러오는 중입니다.
-          </p>
+          <div className="text-center">
+            <div className="mx-auto h-9 w-9 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
+            <p className="mt-4 text-sm font-bold text-slate-700">
+              견적목록을 불러오는 중입니다.
+            </p>
+          </div>
         </div>
       </WorkspaceLayout>
     );
@@ -352,7 +329,7 @@ export default function PartnerQuotesPage() {
             <button
               type="button"
               onClick={() => void reload()}
-              className="mt-5 inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-5 text-sm font-bold text-white transition hover:bg-blue-700"
+              className="mt-5 inline-flex h-10 items-center justify-center rounded-lg bg-slate-900 px-5 text-sm font-bold text-white transition hover:bg-slate-800"
             >
               다시 불러오기
             </button>
@@ -364,19 +341,35 @@ export default function PartnerQuotesPage() {
 
   return (
     <WorkspaceLayout role="partner">
-      <div className="min-h-full bg-[#f7f9fc]">
-        <div className="mx-auto w-full max-w-[1700px] px-5 py-5 lg:px-7">
+      <style>{`
+        .g1-scroll-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
+        .g1-scroll-hide::-webkit-scrollbar {
+          display: none;
+          width: 0;
+          height: 0;
+        }
+      `}</style>
+
+      <div className="g1-scroll-hide min-h-full overflow-auto bg-[#f7f9fc]">
+        <div className="mx-auto w-full max-w-[1760px] px-5 py-5 lg:px-7">
           <PageHeader
             searchKeyword={searchKeyword}
             onSearchKeywordChange={
               setSearchKeyword
             }
             lastUpdatedAt={lastUpdatedAt}
+            isLoading={isLoading}
+            onReload={reload}
           />
 
           <section className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             <StatusSummaryCard
               tone="slate"
+              icon={FileText}
               title="전체 견적"
               value={summary.total}
               description="제출 견적 전체"
@@ -384,6 +377,7 @@ export default function PartnerQuotesPage() {
 
             <StatusSummaryCard
               tone="gray"
+              icon={Clock3}
               title="임시저장"
               value={summary.draft}
               description="작성 중인 견적"
@@ -391,6 +385,7 @@ export default function PartnerQuotesPage() {
 
             <StatusSummaryCard
               tone="blue"
+              icon={Send}
               title="제출완료"
               value={summary.submitted}
               description="고객사 제출 완료"
@@ -398,6 +393,7 @@ export default function PartnerQuotesPage() {
 
             <StatusSummaryCard
               tone="orange"
+              icon={Clock3}
               title="선정대기"
               value={summary.waiting}
               description="최종 결과 대기"
@@ -405,6 +401,7 @@ export default function PartnerQuotesPage() {
 
             <StatusSummaryCard
               tone="green"
+              icon={Trophy}
               title="수주"
               value={summary.awarded}
               description="최종 선정 견적"
@@ -412,49 +409,24 @@ export default function PartnerQuotesPage() {
 
             <StatusSummaryCard
               tone="red"
+              icon={XCircle}
               title="미선정"
               value={summary.rejected}
               description="선정 제외 견적"
             />
           </section>
 
-          <section className="mt-4 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_360px]">
-            <div className="min-w-0 space-y-4">
+          <section className="mt-4">
+            <div className="min-w-0">
               <QuoteListPanel
                 quotes={quotes}
                 filteredQuotes={filteredQuotes}
-                selectedQuoteId={
-                  selectedQuote?.id ?? null
-                }
                 statusFilter={statusFilter}
                 onStatusFilterChange={
                   setStatusFilter
                 }
-                onSelectQuote={
-                  setSelectedQuoteId
-                }
-              />
-
-              <SelectedQuotePanel
-                quote={selectedQuote}
               />
             </div>
-
-            <aside className="space-y-4">
-              <QuoteStatusPanel
-                summary={summary}
-              />
-
-              <RecentResultPanel
-                quotes={recentResults}
-              />
-
-              <SelectedQuoteSummaryPanel
-                quote={selectedQuote}
-              />
-
-              <QuoteActionGuidePanel />
-            </aside>
           </section>
         </div>
       </div>
@@ -468,32 +440,40 @@ type PageHeaderProps = {
     value: string,
   ) => void;
   lastUpdatedAt: string | null;
+  isLoading: boolean;
+  onReload: () => void;
 };
 
 function PageHeader({
   searchKeyword,
   onSearchKeywordChange,
   lastUpdatedAt,
+  isLoading,
+  onReload,
 }: PageHeaderProps) {
   return (
     <header className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
       <div>
-        <p className="text-xs font-semibold text-blue-700">
+        <p className="text-[11px] font-black text-blue-700">
           입찰관리 / 견적목록
         </p>
 
-        <h1 className="mt-1 text-[26px] font-extrabold tracking-tight text-slate-950">
+        <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
           견적목록
         </h1>
 
-        <p className="mt-1 text-sm text-slate-600">
-          제출한 견적의 진행
-          상태와 선정 결과를 확인합니다.
+        <p className="mt-1 text-xs font-semibold text-slate-600">
+          제출한 견적의 진행 상태와 선정 결과를 확인할 수 있습니다.
         </p>
       </div>
 
-      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative">
+          <Search
+            size={15}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+
           <input
             type="search"
             value={searchKeyword}
@@ -503,19 +483,28 @@ function PageHeader({
               )
             }
             placeholder="견적번호, RFQ, 프로젝트명, 고객사 검색"
-            className="h-11 w-full rounded-lg border border-slate-200 bg-white pl-4 pr-11 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-[360px]"
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-4 text-xs font-semibold text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 sm:w-[340px]"
           />
-
-          <span className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-lg text-slate-800">
-            ⌕
-          </span>
         </div>
+
+        <button
+          type="button"
+          onClick={onReload}
+          disabled={isLoading}
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 shadow-sm transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw
+            size={14}
+            className={isLoading ? "animate-spin" : ""}
+          />
+          새로고침
+        </button>
       </div>
 
       <div className="hidden w-full text-right lg:absolute lg:right-7 lg:top-[76px] lg:block lg:w-auto">
-        <p className="text-xs text-slate-500">
-          마지막 상태 변경{" "}
-          <span className="font-medium text-slate-700">
+        <p className="text-[11px] font-semibold text-slate-500">
+          마지막 업데이트{" "}
+          <span className="font-bold text-slate-700">
             {lastUpdatedAt
               ? formatDateTime(
                   lastUpdatedAt,
@@ -538,6 +527,7 @@ type StatusSummaryTone =
 
 type StatusSummaryCardProps = {
   tone: StatusSummaryTone;
+  icon: React.ElementType;
   title: string;
   value: number;
   description: string;
@@ -545,74 +535,65 @@ type StatusSummaryCardProps = {
 
 function StatusSummaryCard({
   tone,
+  icon: Icon,
   title,
   value,
   description,
 }: StatusSummaryCardProps) {
   const styles = {
     slate: {
-      icon: "bg-slate-900 text-white",
-      glow: "bg-slate-100",
-      symbol: "전",
+      icon: "bg-slate-100 text-slate-700",
+      ring: "ring-slate-100",
     },
     gray: {
-      icon: "bg-slate-500 text-white",
-      glow: "bg-slate-100",
-      symbol: "임",
+      icon: "bg-slate-50 text-slate-600",
+      ring: "ring-slate-100",
     },
     blue: {
-      icon: "bg-blue-600 text-white",
-      glow: "bg-blue-100",
-      symbol: "제",
+      icon: "bg-blue-50 text-blue-600",
+      ring: "ring-blue-100",
     },
     orange: {
-      icon: "bg-orange-500 text-white",
-      glow: "bg-orange-100",
-      symbol: "대",
+      icon: "bg-amber-50 text-amber-600",
+      ring: "ring-amber-100",
     },
     green: {
-      icon: "bg-emerald-500 text-white",
-      glow: "bg-emerald-100",
-      symbol: "수",
+      icon: "bg-emerald-50 text-emerald-600",
+      ring: "ring-emerald-100",
     },
     red: {
-      icon: "bg-red-500 text-white",
-      glow: "bg-red-100",
-      symbol: "미",
+      icon: "bg-rose-50 text-rose-600",
+      ring: "ring-rose-100",
     },
   }[tone];
 
   return (
-    <article className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm">
-      <div
-        className={`absolute -right-7 -top-7 h-20 w-20 rounded-full opacity-60 ${styles.glow}`}
-      />
-
-      <div className="relative flex items-center gap-3">
+    <article className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div className="flex items-start gap-3">
         <div
-          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-black shadow-md ${styles.icon}`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ring-4 ${styles.icon} ${styles.ring}`}
         >
-          {styles.symbol}
+          <Icon size={18} />
         </div>
 
         <div className="min-w-0">
-          <p className="text-sm font-bold text-slate-800">
+          <p className="text-xs font-black text-slate-600">
             {title}
           </p>
 
-          <div className="mt-1 flex items-end gap-1">
-            <strong className="text-[27px] font-black leading-none tracking-tight text-slate-950">
+          <div className="mt-2 flex items-end gap-1.5">
+            <strong className="text-2xl font-black leading-none tracking-tight text-slate-950">
               {value.toLocaleString(
                 "ko-KR",
               )}
             </strong>
 
-            <span className="pb-0.5 text-xs font-bold text-slate-600">
+            <span className="pb-0.5 text-xs font-black text-slate-500">
               건
             </span>
           </div>
 
-          <p className="mt-1.5 truncate text-[11px] text-slate-500">
+          <p className="mt-1.5 truncate text-[11px] font-semibold text-slate-500">
             {description}
           </p>
         </div>
@@ -624,27 +605,23 @@ function StatusSummaryCard({
 type QuoteListPanelProps = {
   quotes: PartnerQuoteListItem[];
   filteredQuotes: PartnerQuoteListItem[];
-  selectedQuoteId: string | null;
   statusFilter: QuoteStatusFilter;
   onStatusFilterChange: (
     value: QuoteStatusFilter,
   ) => void;
-  onSelectQuote: (id: string) => void;
 };
 
 function QuoteListPanel({
   quotes: allQuotes,
   filteredQuotes,
-  selectedQuoteId,
   statusFilter,
   onStatusFilterChange,
-  onSelectQuote,
 }: QuoteListPanelProps) {
   return (
     <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h2 className="text-lg font-extrabold text-slate-950">
+          <h2 className="text-base font-black text-slate-950">
             제출 견적 현황
           </h2>
 
@@ -657,42 +634,37 @@ function QuoteListPanel({
           </p>
         </div>
 
-        <select
-          value={statusFilter}
-          onChange={(event) =>
-            onStatusFilterChange(
-              event.target
-                .value as QuoteStatusFilter,
-            )
-          }
-          className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-        >
-          <option value="all">
-            전체 상태
-          </option>
-          <option value="draft">
-            임시저장
-          </option>
-          <option value="submitted">
-            제출완료
-          </option>
-          <option value="waiting">
-            선정대기
-          </option>
-          <option value="awarded">
-            수주
-          </option>
-          <option value="rejected">
-            미선정
-          </option>
-        </select>
+        <div className="relative">
+          <Filter
+            size={13}
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+          />
+
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              onStatusFilterChange(
+                event.target
+                  .value as QuoteStatusFilter,
+              )
+            }
+            className="h-9 rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs font-bold text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+          >
+            <option value="all">전체 상태</option>
+            <option value="draft">임시저장</option>
+            <option value="submitted">제출완료</option>
+            <option value="waiting">선정대기</option>
+            <option value="awarded">수주</option>
+            <option value="rejected">미선정</option>
+          </select>
+        </div>
       </div>
 
       {filteredQuotes.length === 0 ? (
         <EmptyState />
       ) : (
         <>
-          <div className="overflow-x-auto">
+          <div className="g1-scroll-hide overflow-x-auto">
             <table className="w-full min-w-[1250px] border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 bg-[#f7f9fc]">
@@ -753,23 +725,10 @@ function QuoteListPanel({
                     const action =
                       getQuoteAction(quote);
 
-                    const isSelected =
-                      selectedQuoteId ===
-                      quote.id;
-
                     return (
                       <tr
                         key={quote.id}
-                        onClick={() =>
-                          onSelectQuote(
-                            quote.id,
-                          )
-                        }
-                        className={`cursor-pointer border-b border-slate-100 transition last:border-b-0 ${
-                          isSelected
-                            ? "bg-blue-50/80"
-                            : "hover:bg-slate-50"
-                        }`}
+                        className="border-b border-slate-100 transition last:border-b-0 hover:bg-slate-50"
                       >
                         <TableCell>
                           <span className="font-bold text-blue-700 underline decoration-blue-200 underline-offset-4">
@@ -778,13 +737,13 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell>
-                          <span className="text-sm font-bold text-slate-800">
+                          <span className="text-xs font-bold text-slate-800">
                             {getShortCode("RFQ", quote.bidding_request_id)}
                           </span>
                         </TableCell>
 
                         <TableCell>
-                          <p className="max-w-[190px] truncate text-sm font-bold text-slate-900">
+                          <p className="max-w-[190px] truncate text-xs font-black text-slate-900">
                             {
                               quote.project_name
                             }
@@ -792,7 +751,7 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell>
-                          <span className="text-sm font-semibold text-slate-700">
+                          <span className="text-xs font-bold text-slate-700">
                             {
                               quote.customer_company_name
                             }
@@ -800,7 +759,7 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell align="center">
-                          <span className="text-sm font-bold text-slate-700">
+                          <span className="text-xs font-bold text-slate-700">
                             {quote.bom_count.toLocaleString(
                               "ko-KR",
                             )}
@@ -809,7 +768,7 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell align="right">
-                          <span className="text-sm font-extrabold text-slate-900">
+                          <span className="text-xs font-black text-slate-900">
                             {formatCurrency(
                               quote.total_amount,
                             )}
@@ -817,7 +776,7 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell>
-                          <span className="text-sm font-medium text-slate-700">
+                          <span className="text-xs font-semibold text-slate-700">
                             {formatDate(
                               quote.submitted_at,
                             )}
@@ -825,7 +784,7 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell>
-                          <span className="text-sm font-medium text-slate-700">
+                          <span className="text-xs font-semibold text-slate-700">
                             {formatDate(
                               quote.rfq_due_date,
                             )}
@@ -845,7 +804,7 @@ function QuoteListPanel({
                         </TableCell>
 
                         <TableCell>
-                          <span className="text-sm font-medium text-slate-600">
+                          <span className="text-xs font-semibold text-slate-600">
                             {formatDateTime(
                               quote.updated_at,
                             )}
@@ -874,13 +833,14 @@ function QuoteListPanel({
                               ) =>
                                 event.stopPropagation()
                               }
-                              className={`inline-flex h-8 items-center justify-center whitespace-nowrap rounded-md px-3 text-xs font-bold transition ${
+                              className={`inline-flex h-8 items-center justify-center gap-1 whitespace-nowrap rounded-md px-3 text-xs font-black transition ${
                                 action.primary
                                   ? "bg-blue-600 text-white hover:bg-blue-700"
                                   : "border border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
                               }`}
                             >
                               {action.label}
+                              {!action.primary && <ChevronRight size={13} />}
                             </Link>
                           )}
                         </TableCell>
@@ -941,16 +901,25 @@ function SelectedQuotePanel({
 }: SelectedQuotePanelProps) {
   if (!quote) {
     return (
-      <section className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm">
-        <p className="text-sm font-bold text-slate-700">
-          선택된 견적이 없습니다.
-        </p>
+      <details className="group rounded-xl border border-slate-200 bg-white shadow-sm">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 text-sm font-black text-slate-900 [&::-webkit-details-marker]:hidden">
+          선택 견적 상세
+          <ChevronDown
+            size={16}
+            className="text-slate-400 transition-transform group-open:rotate-180"
+          />
+        </summary>
 
-        <p className="mt-1 text-xs text-slate-500">
-          실데이터가 연결되면 견적별 상태
-          상세가 표시됩니다.
-        </p>
-      </section>
+        <div className="border-t border-slate-200 px-6 py-10 text-center">
+          <p className="text-sm font-bold text-slate-700">
+            선택된 견적이 없습니다.
+          </p>
+
+          <p className="mt-1 text-xs text-slate-500">
+            목록에서 견적을 선택해 주세요.
+          </p>
+        </div>
+      </details>
     );
   }
 
@@ -962,14 +931,14 @@ function SelectedQuotePanel({
   const action = getQuoteAction(quote);
 
   return (
-    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+    <details className="group overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 [&::-webkit-details-marker]:hidden">
         <div className="flex flex-wrap items-center gap-3">
-          <strong className="text-xl font-black text-blue-700">
+          <strong className="text-base font-black text-blue-700">
             {getShortCode("QT", quote.id)}
           </strong>
 
-          <h2 className="text-xl font-extrabold text-slate-950">
+          <h2 className="text-base font-black text-slate-950">
             {quote.project_name}
           </h2>
 
@@ -984,21 +953,13 @@ function SelectedQuotePanel({
           </span>
         </div>
 
-        {!action.disabled && (
-          <Link
-            href={action.href}
-            className={`inline-flex h-9 items-center justify-center rounded-lg px-4 text-sm font-bold transition ${
-              action.primary
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "border border-slate-200 bg-white text-slate-700 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700"
-            }`}
-          >
-            {action.label}
-          </Link>
-        )}
-      </div>
+        <ChevronDown
+          size={18}
+          className="shrink-0 text-slate-400 transition-transform group-open:rotate-180"
+        />
+      </summary>
 
-      <div className="grid divide-y divide-slate-200 lg:grid-cols-5 lg:divide-x lg:divide-y-0">
+      <div className="grid divide-y divide-slate-200 border-t border-slate-200 lg:grid-cols-5 lg:divide-x lg:divide-y-0">
         <SelectedInfoItem
           label="RFQ 번호"
           value={getShortCode("RFQ", quote.bidding_request_id)}
@@ -1096,7 +1057,7 @@ function SelectedQuotePanel({
           )}
         </div>
       </div>
-    </section>
+    </details>
   );
 }
 
@@ -1110,12 +1071,12 @@ function SelectedInfoItem({
   value,
 }: SelectedInfoItemProps) {
   return (
-    <div className="px-5 py-4">
-      <p className="text-xs font-bold text-slate-500">
+    <div className="px-5 py-3">
+      <p className="text-[11px] font-bold text-slate-500">
         {label}
       </p>
 
-      <p className="mt-2 text-sm font-extrabold text-slate-900">
+      <p className="mt-1 text-xs font-black text-slate-900">
         {value}
       </p>
     </div>
@@ -1189,12 +1150,12 @@ function QuoteStatusPanel({
   ];
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-5 py-4 text-sm font-black text-slate-900">
         견적 상태 현황
-      </h2>
+      </div>
 
-      <div className="mt-5 space-y-3">
+      <div className="space-y-3 border-t border-slate-200 px-5 py-4">
         {items.map((item) => {
           const percentage =
             summary.total > 0
@@ -1249,17 +1210,17 @@ function RecentResultPanel({
   quotes: recentQuotes,
 }: RecentResultPanelProps) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-5 py-4 text-sm font-black text-slate-900">
         최근 선정 결과
-      </h2>
+      </div>
 
       {recentQuotes.length === 0 ? (
-        <p className="py-7 text-center text-xs text-slate-500">
+        <p className="border-t border-slate-200 px-5 py-7 text-center text-xs text-slate-500">
           최근 확정된 선정 결과가 없습니다.
         </p>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="space-y-3 border-t border-slate-200 px-5 py-4">
           {recentQuotes.map((quote) => {
             const status =
               getQuoteStatusInformation(
@@ -1310,17 +1271,17 @@ function SelectedQuoteSummaryPanel({
   quote,
 }: SelectedQuoteSummaryPanelProps) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-5 py-4 text-sm font-black text-slate-900">
         선택 견적
-      </h2>
+      </div>
 
       {!quote ? (
-        <p className="py-7 text-center text-xs text-slate-500">
+        <p className="border-t border-slate-200 px-5 py-7 text-center text-xs text-slate-500">
           목록에서 견적을 선택해 주세요.
         </p>
       ) : (
-        <div className="mt-4">
+        <div className="border-t border-slate-200 px-5 py-4">
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
             <p className="text-sm font-black text-blue-700">
               {getShortCode("QT", quote.id)}
@@ -1417,12 +1378,12 @@ function QuoteActionGuidePanel() {
   ];
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 className="text-base font-extrabold text-slate-950">
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="px-5 py-4 text-sm font-black text-slate-900">
         상태별 작업
-      </h2>
+      </div>
 
-      <div className="mt-4 space-y-3">
+      <div className="space-y-3 border-t border-slate-200 px-5 py-4">
         {items.map((item) => (
           <div
             key={item.status}
@@ -1489,7 +1450,7 @@ function TableHeader({
 
   return (
     <th
-      className={`whitespace-nowrap px-4 py-3 text-xs font-extrabold text-slate-600 ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3 text-xs font-black text-slate-600 ${alignClass}`}
     >
       {children}
     </th>
@@ -1514,7 +1475,7 @@ function TableCell({
 
   return (
     <td
-      className={`whitespace-nowrap px-4 py-3.5 align-middle ${alignClass}`}
+      className={`whitespace-nowrap px-4 py-3 align-middle text-xs ${alignClass}`}
     >
       {children}
     </td>

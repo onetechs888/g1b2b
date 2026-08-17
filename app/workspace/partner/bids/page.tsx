@@ -18,7 +18,6 @@ import {
   Users,
 } from "lucide-react";
 import {
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -308,27 +307,6 @@ export default function PartnerBidsPage() {
   const [tierFilter, setTierFilter] =
     useState<TierFilter>("all");
 
-  const [
-    selectedBidId,
-    setSelectedBidId,
-  ] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (bids.length === 0) {
-      setSelectedBidId(null);
-      return;
-    }
-
-    const selectedBidExists =
-      bids.some(
-        (bid) => bid.id === selectedBidId,
-      );
-
-    if (!selectedBidExists) {
-      setSelectedBidId(bids[0].id);
-    }
-  }, [bids, selectedBidId]);
-
   const tierOptions = useMemo(() => {
     return Array.from(
       new Set(
@@ -466,33 +444,6 @@ export default function PartnerBidsPage() {
     deadlineFilter,
   ]);
 
-  const selectedBid = useMemo(() => {
-    if (!selectedBidId) {
-      return filteredBids[0] ?? null;
-    }
-
-    return (
-      bids.find(
-        (bid) =>
-          bid.id === selectedBidId,
-      ) ??
-      filteredBids[0] ??
-      null
-    );
-  }, [
-    bids,
-    filteredBids,
-    selectedBidId,
-  ]);
-
-  const selectedBidIndex =
-    selectedBid
-      ? bids.findIndex(
-          (bid) =>
-            bid.id === selectedBid.id,
-        )
-      : -1;
-
   const lastUpdatedAt =
     useMemo(() => {
       if (bids.length === 0) {
@@ -585,15 +536,12 @@ export default function PartnerBidsPage() {
             />
           </section>
 
-          <section className="mt-4 space-y-4">
+          <section className="mt-4">
             <BidListPanel
               bids={bids}
               filteredBids={filteredBids}
               isLoading={isLoading}
               error={error}
-              selectedBidId={
-                selectedBid?.id ?? null
-              }
               deadlineFilter={
                 deadlineFilter
               }
@@ -605,22 +553,7 @@ export default function PartnerBidsPage() {
               onTierFilterChange={
                 setTierFilter
               }
-              onSelectBid={
-                setSelectedBidId
-              }
               onReload={reload}
-            />
-
-            <SelectedBidPanel
-              bid={selectedBid}
-              rfqNumber={
-                selectedBid
-                  ? getRfqNumber(
-                      selectedBid.id,
-                      selectedBidIndex,
-                    )
-                  : null
-              }
             />
           </section>
         </div>
@@ -795,7 +728,6 @@ type BidListPanelProps = {
   filteredBids: PartnerOpenBiddingRequest[];
   isLoading: boolean;
   error: string | null;
-  selectedBidId: string | null;
   deadlineFilter: DeadlineFilter;
   tierFilter: TierFilter;
   tierOptions: string[];
@@ -805,7 +737,6 @@ type BidListPanelProps = {
   onTierFilterChange: (
     value: TierFilter,
   ) => void;
-  onSelectBid: (id: string) => void;
   onReload: () => void;
 };
 
@@ -814,13 +745,11 @@ function BidListPanel({
   filteredBids,
   isLoading,
   error,
-  selectedBidId,
   deadlineFilter,
   tierFilter,
   tierOptions,
   onDeadlineFilterChange,
   onTierFilterChange,
-  onSelectBid,
   onReload,
 }: BidListPanelProps) {
   return (
@@ -985,23 +914,10 @@ function BidListPanel({
                           bid.bid_deadline,
                         );
 
-                      const isSelected =
-                        selectedBidId ===
-                        bid.id;
-
                       return (
                         <tr
                           key={bid.id}
-                          onClick={() =>
-                            onSelectBid(
-                              bid.id,
-                            )
-                          }
-                          className={`cursor-pointer border-b border-slate-100 transition last:border-b-0 ${
-                            isSelected
-                              ? "bg-blue-50/80"
-                              : "hover:bg-slate-50"
-                          }`}
+                          className="border-b border-slate-100 transition last:border-b-0 hover:bg-slate-50"
                         >
                           <TableCell>
                             <span className="font-bold text-blue-700 underline decoration-blue-200 underline-offset-4">

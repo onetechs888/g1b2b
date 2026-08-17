@@ -105,6 +105,7 @@ export type PartnerQuoteListItem = {
   bidding_request_id: string;
 
   project_id: string | null;
+  project_code: string | null;
   project_name: string;
 
   customer_company_id: string | null;
@@ -172,6 +173,11 @@ type PartnerQuoteRequestRow = {
   project_name: string;
   customer_company_id: string | null;
   due_date: string | null;
+};
+
+type PartnerQuoteProjectRow = {
+  id: string;
+  project_code: string;
 };
 
 type CompanyRow = {
@@ -767,6 +773,56 @@ export async function getPartnerQuoteList(): Promise<
   );
 
   /**
+   * 수주 견적에서 해당 프로젝트의 생산관리 화면으로
+   * 바로 이동할 수 있도록 프로젝트 코드를 조회합니다.
+   */
+  const projectIds = Array.from(
+    new Set(
+      biddingRequests
+        .map(
+          (biddingRequest) =>
+            biddingRequest.project_id,
+        )
+        .filter(
+          (
+            projectId,
+          ): projectId is string =>
+            Boolean(projectId),
+        ),
+    ),
+  );
+
+  const projectCodeMap =
+    new Map<string, string>();
+
+  if (projectIds.length > 0) {
+    const {
+      data: projectData,
+      error: projectError,
+    } = await supabase
+      .from("projects")
+      .select("id, project_code")
+      .in("id", projectIds);
+
+    if (projectError) {
+      throw new Error(
+        projectError.message,
+      );
+    }
+
+    const projects =
+      (projectData ??
+        []) as PartnerQuoteProjectRow[];
+
+    projects.forEach((project) => {
+      projectCodeMap.set(
+        project.id,
+        project.project_code,
+      );
+    });
+  }
+
+  /**
    * 3. 고객사 이름 조회
    */
   const customerCompanyIds =
@@ -884,6 +940,13 @@ export async function getPartnerQuoteList(): Promise<
       project_id:
         biddingRequest?.project_id ??
         null,
+
+      project_code:
+        biddingRequest?.project_id
+          ? projectCodeMap.get(
+              biddingRequest.project_id,
+            ) ?? null
+          : null,
 
       project_name:
         biddingRequest
