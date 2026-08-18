@@ -197,19 +197,10 @@ export default function QualityInspectionPage() {
 
       setRows(nextRows);
 
-      const firstRow = nextRows[0];
-
-      if (firstRow) {
-        setSelectedRowId(firstRow.id);
-        setSelectedStatus(firstRow.qc_status);
-        setSelectedDecision("");
-        setMemo(firstRow.memo ?? "");
-      } else {
-        setSelectedRowId(null);
-        setSelectedStatus("scheduled");
-        setSelectedDecision("");
-        setMemo("");
-      }
+      setSelectedRowId(null);
+      setSelectedStatus("scheduled");
+      setSelectedDecision("");
+      setMemo("");
 
       setChangedIds(new Set());
       setLoading(false);
@@ -280,11 +271,6 @@ export default function QualityInspectionPage() {
 
       return next;
     });
-  }
-
-  function handleLocalStatusChange(value: string) {
-    setSelectedStatus(value);
-    markChanged(value, memo);
   }
 
   function handleMemoChange(value: string) {
@@ -429,7 +415,7 @@ export default function QualityInspectionPage() {
         }
       `}</style>
 
-      <div className="grid grid-cols-[1fr_310px] gap-3">
+      <div className="grid grid-cols-1 gap-3">
         <div className="space-y-3">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -756,39 +742,8 @@ export default function QualityInspectionPage() {
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-[1fr_1fr_1.35fr] gap-5">
-                                <div>
-                                  <h3 className="mb-3 text-xs font-black text-slate-700">
-                                    기본 정보
-                                  </h3>
-
-                                  <div className="space-y-2 text-xs">
-                                    {[
-                                      ["품목 코드", row.part_number],
-                                      ["품명", row.part_name],
-                                      ["도면 번호", row.drawing_no],
-                                      ["검사유형", row.inspection_type],
-                                      ["검사자", row.inspector],
-                                      ["검사예정일", formatDate(row.inspection_date)],
-                                      ["검사일", formatDate(row.updated_at)],
-                                      ["메모", row.memo || "-"],
-                                    ].map(([label, value]) => (
-                                      <div
-                                        key={label}
-                                        className="grid grid-cols-[88px_1fr]"
-                                      >
-                                        <div className="font-bold text-slate-500">
-                                          {label}
-                                        </div>
-                                        <div className="font-black text-slate-800">
-                                          {value}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-
-                                <div>
+                              <div className="grid items-stretch gap-4 xl:grid-cols-2">
+                                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
                                   <h3 className="mb-3 text-xs font-black text-slate-700">
                                     검사 결과
                                   </h3>
@@ -798,22 +753,9 @@ export default function QualityInspectionPage() {
                                       <label className="mb-1 block text-xs font-black text-slate-500">
                                         현재 상태
                                       </label>
-                                      <select
-                                        value={selectedStatus}
-                                        onChange={(event) =>
-                                          handleLocalStatusChange(event.target.value)
-                                        }
-                                        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-blue-600 outline-none"
-                                      >
-                                        {QC_STATUS_OPTIONS.map((option) => (
-                                          <option
-                                            key={option.value}
-                                            value={option.value}
-                                          >
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
+                                      <div className="flex h-10 w-full items-center rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-black text-blue-600">
+                                        {getQcStatusLabel(selectedStatus)}
+                                      </div>
                                     </div>
 
                                     <div>
@@ -849,7 +791,7 @@ export default function QualityInspectionPage() {
                                         }
                                         maxLength={500}
                                         placeholder="검사 관련 메모를 입력하세요."
-                                        className="h-24 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
+                                        className="h-32 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
                                       />
                                       <div className="text-right text-[11px] font-bold text-slate-400">
                                         {memo.length} / 500
@@ -858,7 +800,7 @@ export default function QualityInspectionPage() {
                                   </div>
                                 </div>
 
-                                <div>
+                                <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
                                   <h3 className="mb-3 text-xs font-black text-slate-700">
                                     검사 증빙자료 업로드
                                   </h3>
@@ -951,7 +893,8 @@ export default function QualityInspectionPage() {
           </section>
         </div>
 
-        <aside className="sticky top-3 h-[calc(100vh-24px)] rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {selectedRow && (
+        <aside className="hidden">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
             <div>
               <h2 className="text-lg font-black text-slate-950">
@@ -961,14 +904,18 @@ export default function QualityInspectionPage() {
               </h2>
             </div>
 
-            <button className="text-slate-400">
+            <button
+              type="button"
+              onClick={() => setSelectedRowId(null)}
+              className="text-slate-400 transition hover:text-slate-700"
+              aria-label="검사 상세 닫기"
+            >
               <X size={18} />
             </button>
           </div>
 
           <div className="g1-scroll-hide h-[calc(100%-64px)] space-y-5 overflow-y-auto p-4">
-            {selectedRow ? (
-              <>
+            <>
                 <section>
                   <div className="mb-3 flex items-center justify-between">
                     <h3 className="text-xs font-black text-slate-700">
@@ -1094,13 +1041,9 @@ export default function QualityInspectionPage() {
                   </div>
                 </section>
               </>
-            ) : (
-              <div className="py-20 text-center text-sm font-bold text-slate-400">
-                선택된 검사 항목이 없습니다.
-              </div>
-            )}
           </div>
         </aside>
+        )}
       </div>
     </WorkspaceLayout>
   );

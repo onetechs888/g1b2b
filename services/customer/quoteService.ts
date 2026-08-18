@@ -2195,3 +2195,58 @@ export async function selectBiddingPartner(
 
   return data as SelectBiddingPartnerResult;
 }
+
+/* =========================================================
+ * 5. 선정 완료 RFQ Project 생성
+ * ======================================================= */
+
+export type CreateProjectFromBiddingResult = {
+  success: boolean;
+
+  bidding_request_id: string;
+
+  project_id: string;
+
+  project_code: string;
+
+  project_name: string;
+
+  partner_company_id: string;
+
+  bom_count: number;
+
+  status: "project_created";
+};
+
+export async function createProjectFromBidding(
+  biddingRequestId: string,
+): Promise<CreateProjectFromBiddingResult> {
+  if (!biddingRequestId) {
+    throw new Error(
+      "Project를 생성할 RFQ ID가 필요합니다.",
+    );
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "create_project_from_bidding",
+    {
+      p_bidding_request_id:
+        biddingRequestId,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  if (!data) {
+    throw new Error(
+      "Project 생성 결과를 확인할 수 없습니다.",
+    );
+  }
+
+  return data as CreateProjectFromBiddingResult;
+}

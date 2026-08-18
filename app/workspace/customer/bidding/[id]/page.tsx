@@ -198,8 +198,10 @@ export default function CustomerBiddingDetailPage() {
 
   const {
     selecting,
+    creating,
     error: selectionError,
     selectPartner,
+    createProject,
     clearError,
   } =
     useSelectBiddingPartner();
@@ -309,14 +311,64 @@ export default function CustomerBiddingDetailPage() {
           quote.id,
         );
 
+      await refresh();
+
       if (!result) {
         return;
       }
 
+      alert(
+        [
+          `${quote.partner_company_name} 업체가 최종 선정되었습니다.`,
+          `Project ${result.project.project_code}가 생성되었습니다.`,
+        ].join("\n"),
+      );
+    };
+
+  const handleCreateMissingProject =
+    async () => {
+      if (!comparison) {
+        return;
+      }
+
+      if (
+        !comparison.rfq
+          .selected_partner_company_id ||
+        comparison.rfq.project_id
+      ) {
+        return;
+      }
+
+      const confirmed =
+        window.confirm(
+          [
+            "선정 완료된 RFQ의 Project를 생성하시겠습니까?",
+            "",
+            "- 선정 Partner 기준으로 Project가 생성됩니다.",
+            "- RFQ BOM이 운영 BOM으로 변환됩니다.",
+            "- 중복 Project는 생성되지 않습니다.",
+          ].join("\n"),
+        );
+
+      if (!confirmed) {
+        return;
+      }
+
+      clearError();
+
+      const result =
+        await createProject(
+          comparison.rfq.id,
+        );
+
       await refresh();
 
+      if (!result) {
+        return;
+      }
+
       alert(
-        `${quote.partner_company_name} 업체가 최종 선정되었습니다.`,
+        `Project ${result.project_code}가 생성되었습니다.`,
       );
     };
 
@@ -667,6 +719,9 @@ export default function CustomerBiddingDetailPage() {
                 selecting={
                   selecting
                 }
+                creating={
+                  creating
+                }
                 selectionError={
                   selectionError
                 }
@@ -674,6 +729,9 @@ export default function CustomerBiddingDetailPage() {
                   void handleSelectPartner(
                     quote,
                   )
+                }
+                onCreateProject={() =>
+                  void handleCreateMissingProject()
                 }
               />
             ) : (
@@ -830,8 +888,10 @@ function VendorComparison({
   selectedPartnerCompanyId,
   projectId,
   selecting,
+  creating,
   selectionError,
   onSelectPartner,
+  onCreateProject,
 }: {
   quotes: CustomerPartnerQuote[];
   lowestAmount: number | null;
@@ -844,10 +904,12 @@ function VendorComparison({
     | null;
   projectId: string | null;
   selecting: boolean;
+  creating: boolean;
   selectionError: string | null;
   onSelectPartner: (
     quote: CustomerPartnerQuote,
   ) => void;
+  onCreateProject: () => void;
 }) {
   if (
     quotes.length === 0
@@ -1086,6 +1148,9 @@ function VendorComparison({
                             selecting={
                               selecting
                             }
+                            creating={
+                              creating
+                            }
                             selectionError={
                               selectionError
                             }
@@ -1093,6 +1158,9 @@ function VendorComparison({
                               onSelectPartner(
                                 quote,
                               )
+                            }
+                            onCreateProject={
+                              onCreateProject
                             }
                           />
                         </div>
@@ -1451,8 +1519,10 @@ function SelectionPanel({
   selectedPartnerCompanyId,
   projectId,
   selecting,
+  creating,
   selectionError,
   onSelectPartner,
+  onCreateProject,
 }: {
   quote: CustomerPartnerQuote;
   selectedPartnerCompanyId:
@@ -1460,8 +1530,10 @@ function SelectionPanel({
     | null;
   projectId: string | null;
   selecting: boolean;
+  creating: boolean;
   selectionError: string | null;
   onSelectPartner: () => void;
+  onCreateProject: () => void;
 }) {
   const isSelected =
     selectedPartnerCompanyId ===
@@ -1529,17 +1601,34 @@ function SelectionPanel({
       ) : null}
 
       {isSelected ? (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
-          <p className="text-sm font-extrabold text-emerald-700">
-            선정 완료 업체입니다.
-          </p>
+        <>
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2.5">
+            <p className="text-sm font-extrabold text-emerald-700">
+              선정 완료 업체입니다.
+            </p>
 
-          <p className="mt-1 text-xs text-emerald-700">
-            {projectId
-              ? "Project 생성까지 완료되었습니다."
-              : "Project는 아직 생성되지 않았습니다."}
-          </p>
-        </div>
+            <p className="mt-1 text-xs text-emerald-700">
+              {projectId
+                ? "Project 생성까지 완료되었습니다."
+                : "Project는 아직 생성되지 않았습니다."}
+            </p>
+          </div>
+
+          {!projectId ? (
+            <button
+              type="button"
+              onClick={
+                onCreateProject
+              }
+              disabled={creating}
+              className="mt-3 flex h-11 w-full items-center justify-center rounded-lg bg-blue-600 text-sm font-extrabold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {creating
+                ? "Project 생성 중..."
+                : "Project 생성"}
+            </button>
+          ) : null}
+        </>
       ) : selectionCompleted ? (
         <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-sm font-bold text-slate-600">

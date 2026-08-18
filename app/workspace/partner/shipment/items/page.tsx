@@ -2,6 +2,19 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardCheck,
+  Download,
+  Filter,
+  PackageCheck,
+  RefreshCw,
+  Save,
+  Search,
+  Timer,
+} from "lucide-react";
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
 import { supabase } from "@/lib/supabase";
@@ -143,18 +156,12 @@ const { data: bomItems } = await bomQuery;
 
       setRows(nextRows);
 
-      const firstRow = nextRows[0];
-
-      if (firstRow) {
-        setSelectedRowId(firstRow.bom_item_id);
-        setShipmentStatus(firstRow.shipment_status);
-        setShippedQuantity(firstRow.shipped_quantity || firstRow.quantity || 0);
-        setTrackingNumber(firstRow.tracking_number ?? "");
-        setShipmentDate(firstRow.shipment_date ?? "");
-        setMemo("");
-      } else {
-        setSelectedRowId(null);
-      }
+      setSelectedRowId(null);
+      setShipmentStatus("ready");
+      setShippedQuantity(0);
+      setTrackingNumber("");
+      setShipmentDate("");
+      setMemo("");
 
       setLoading(false);
     }
@@ -324,117 +331,135 @@ const { data: bomItems } = await bomQuery;
 
   return (
     <WorkspaceLayout>
-      <div className="space-y-5">
+      <div className="min-h-full bg-[#f7f9fc]">
+        <div className="mx-auto w-full max-w-[1760px] space-y-4 px-5 py-5 lg:px-7">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <div className="text-sm font-black text-slate-500">
+            <div className="text-[11px] font-black text-blue-700">
               출하관리 &gt; 출하관리
             </div>
 
-            <h1 className="mt-2 text-2xl font-black text-slate-950">
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
               출하관리
             </h1>
 
-            <p className="mt-2 text-sm font-medium text-slate-500">
+            <p className="mt-1 text-xs font-semibold text-slate-600">
               QC 승인 완료 품목의 출하대기, 출하준비, 출하완료 상태를 관리합니다.
             </p>
           </div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><div className="flex h-10 w-[300px] items-center rounded-xl border border-slate-200 bg-white pl-9 pr-4 text-xs font-semibold text-slate-400 shadow-sm">프로젝트명, PO번호, 고객사 검색</div></div>
+              <button className="flex h-10 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700 shadow-sm"><Filter size={14} /> 필터</button>
+            </div>
+            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500"><RefreshCw size={12} /> 마지막 업데이트 <span className="font-black text-slate-800">실시간 데이터 기준</span></div>
+          </div>
         </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="grid grid-cols-[240px_repeat(4,1fr)] items-center gap-4">
             <div>
-              <div className="text-xs font-bold text-slate-500">
-                프로젝트 (PO)
-              </div>
-              <div className="mt-3">
                 <ProjectSelector
                   projects={projects.map((project) => ({
                     id: project.project_code,
                     name: `${project.project_code} / ${project.project_name}`,
                   }))}
                 />
-              </div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">전체 대상</div>
+            <div className="flex items-center gap-3 border-l border-slate-200 pl-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600"><ClipboardCheck size={17} /></div><div>
+              <div className="text-xs font-black text-slate-500">전체 대상</div>
               <div className="mt-2 text-2xl font-black text-slate-950">
                 {totalCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
+              </div></div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">출하대기</div>
+            <div className="flex items-center gap-3 border-l border-slate-200 pl-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-orange-50 text-orange-600"><Timer size={17} /></div><div>
+              <div className="text-xs font-black text-slate-500">출하대기</div>
               <div className="mt-1 text-[11px] font-bold text-slate-400">
                 가공 및 검수완료
               </div>
               <div className="mt-2 text-2xl font-black text-orange-600">
                 {readyCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
+              </div></div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">출하준비</div>
+            <div className="flex items-center gap-3 border-l border-slate-200 pl-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><PackageCheck size={17} /></div><div>
+              <div className="text-xs font-black text-slate-500">출하준비</div>
               <div className="mt-1 text-[11px] font-bold text-slate-400">
                 포장완료
               </div>
               <div className="mt-2 text-2xl font-black text-green-600">
                 {shippedCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
+              </div></div>
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">출하완료</div>
+            <div className="flex items-center gap-3 border-l border-slate-200 pl-5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50 text-blue-600"><CheckCircle2 size={17} /></div><div>
+              <div className="text-xs font-black text-slate-500">출하완료</div>
               <div className="mt-1 text-[11px] font-bold text-slate-400">
                 납품 및 거래명세서 송부
               </div>
               <div className="mt-2 text-2xl font-black text-blue-600">
                 {completedCount}
                 <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
+              </div></div>
             </div>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-200 bg-white">
-          <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-72 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
+        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 flex-1 items-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-400">
                 품목명, 도면번호 검색
               </div>
 
-              <select className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">
+              <select className="h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700">
                 <option>전체 상태</option>
               </select>
+              <select className="h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700"><option>유형 전체</option></select>
+              <div className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700"><CalendarDays size={13} /> 기간 전체</div>
+              <button className="h-9 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black text-slate-700">초기화</button>
             </div>
+        </section>
 
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div className="text-xs font-black text-slate-700">전체 {totalCount}건</div>
+            <div className="flex items-center gap-2">
+            <button className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700"><Download size={14} /> 엑셀 다운로드</button>
             <button
               type="button"
               onClick={handleSave}
               disabled={!selectedRow || saving}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white hover:bg-blue-700 disabled:bg-slate-300"
+              className="flex h-9 items-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-black text-white hover:bg-blue-700 disabled:bg-slate-300"
             >
+              <Save size={14} />
               {saving ? "저장 중..." : "상태 저장"}
             </button>
+            </div>
           </div>
 
-          <div className="max-h-[640px] overflow-auto">
-            <table className="w-full min-w-[1050px] text-left text-sm">
-              <thead className="bg-slate-50 text-xs font-black text-slate-500">
+          <div className="max-h-[585px] overflow-auto">
+            <table className="w-full min-w-[1120px] text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] font-black text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">No.</th>
-                  <th className="px-4 py-3">품목 코드</th>
-                  <th className="px-4 py-3">품목명</th>
-                  <th className="px-4 py-3">도면번호</th>
-                  <th className="px-4 py-3">수량</th>
-                  <th className="px-4 py-3">출하수량</th>
-                  <th className="px-4 py-3">현재 상태</th>
-                  <th className="px-4 py-3">출하일</th>
-                  <th className="px-4 py-3">수정</th>
+                  <th className="px-3 py-3">선택</th>
+                  <th className="px-3 py-3">No.</th>
+                  <th className="px-3 py-3">품목 코드</th>
+                  <th className="px-3 py-3">품목명</th>
+                  <th className="px-3 py-3">도면번호</th>
+                  <th className="px-3 py-3">수량</th>
+                  <th className="px-3 py-3">출하수량</th>
+                  <th className="px-3 py-3">현재 상태</th>
+                  <th className="px-3 py-3">출하일</th>
+                  <th className="px-3 py-3 text-center">상세</th>
                 </tr>
               </thead>
 
@@ -447,35 +472,36 @@ const { data: bomItems } = await bomQuery;
                       <tr
                         onClick={() => handleSelectRow(row)}
                         className={[
-                          "cursor-pointer hover:bg-blue-50",
-                          active ? "bg-blue-50" : "",
+                          "cursor-pointer hover:bg-slate-50",
+                          active ? "bg-blue-50/50" : "",
                         ].join(" ")}
                       >
-                        <td className="px-4 py-3 font-bold text-slate-600">
+                        <td className="px-3 py-3"><input type="checkbox" checked={active} readOnly className="h-4 w-4 accent-blue-600" /></td>
+                        <td className="px-3 py-3 font-bold text-slate-600">
                           {row.no}
                         </td>
 
-                        <td className="px-4 py-3 font-black text-slate-950">
+                        <td className="px-3 py-3 font-black text-slate-950">
                           {row.part_number}
                         </td>
 
-                        <td className="px-4 py-3 font-bold text-slate-800">
+                        <td className="px-3 py-3 font-bold text-slate-800">
                           {row.part_name}
                         </td>
 
-                        <td className="px-4 py-3 font-medium text-slate-600">
+                        <td className="px-3 py-3 font-semibold text-slate-600">
                           {row.drawing_no}
                         </td>
 
-                        <td className="px-4 py-3 font-bold text-slate-700">
+                        <td className="px-3 py-3 font-bold text-slate-700">
                           {row.quantity} {row.unit}
                         </td>
 
-                        <td className="px-4 py-3 font-bold text-slate-700">
+                        <td className="px-3 py-3 font-bold text-slate-700">
                           {row.shipped_quantity} {row.unit}
                         </td>
 
-                        <td className="px-4 py-3">
+                        <td className="px-3 py-3">
                           <span
                             className={`rounded-lg px-2 py-1 text-xs font-black ${getShipmentStatusBadgeClass(
                               row.shipment_status
@@ -485,25 +511,23 @@ const { data: bomItems } = await bomQuery;
                           </span>
                         </td>
 
-                        <td className="px-4 py-3 font-bold text-slate-600">
+                        <td className="px-3 py-3 font-bold text-slate-600">
                           {row.shipment_date || "-"}
                         </td>
 
-                        <td className="px-4 py-3 font-black text-blue-600">
-                          {active ? "닫기" : "수정"}
-                        </td>
+                        <td className="px-3 py-3 text-center"><ChevronDown size={15} className={`mx-auto text-slate-500 transition ${active ? "rotate-180" : ""}`} /></td>
                       </tr>
 
                       {active ? (
                         <tr>
-                          <td colSpan={9} className="bg-slate-50 px-5 py-5">
-                            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                              <div className="mb-5 flex items-center justify-between">
+                          <td colSpan={10} className="bg-white p-0">
+                            <div className="w-full border-t border-slate-200 p-4">
+                              <div className="mb-4 flex items-center justify-between">
                                 <div>
-                                  <h2 className="text-lg font-black text-slate-950">
+                                  <h2 className="text-sm font-black text-slate-950">
                                     {row.part_number} / {row.part_name}
                                   </h2>
-                                  <p className="mt-1 text-sm font-medium text-slate-500">
+                                  <p className="mt-1 text-xs font-semibold text-slate-500">
                                     해당 품목의 출하 상태와 출하 정보를 수정합니다.
                                   </p>
                                 </div>
@@ -517,114 +541,26 @@ const { data: bomItems } = await bomQuery;
                                 </span>
                               </div>
 
-                              <div className="grid grid-cols-3 gap-5">
-                                <div>
-                                  <h3 className="mb-3 text-sm font-black text-slate-950">
-                                    품목 정보
-                                  </h3>
-
-                                  <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between">
-                                      <span className="text-slate-500">
-                                        품목 코드
-                                      </span>
-                                      <span className="font-bold">
-                                        {row.part_number}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex justify-between">
-                                      <span className="text-slate-500">
-                                        품목명
-                                      </span>
-                                      <span className="font-bold">
-                                        {row.part_name}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex justify-between">
-                                      <span className="text-slate-500">
-                                        도면 번호
-                                      </span>
-                                      <span className="font-bold">
-                                        {row.drawing_no}
-                                      </span>
-                                    </div>
-
-                                    <div className="flex justify-between">
-                                      <span className="text-slate-500">
-                                        총 수량
-                                      </span>
-                                      <span className="font-bold">
-                                        {row.quantity} {row.unit}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-
-                                <div>
-                                  <h3 className="mb-3 text-sm font-black text-slate-950">
+                              <div className="grid items-stretch gap-4 xl:grid-cols-2">
+                                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                                  <h3 className="mb-3 text-xs font-black text-slate-700">
                                     출하 정보
                                   </h3>
 
-                                  <label className="mb-2 block text-xs font-bold text-slate-500">
-                                    출하 상태
-                                  </label>
-
-                                  <select
-                                    value={shipmentStatus}
-                                    onChange={(event) =>
-                                      setShipmentStatus(event.target.value)
-                                    }
-                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
-                                  >
-                                    {SHIPMENT_STATUS_OPTIONS.map((option) => (
-                                      <option
-                                        key={option.value}
-                                        value={option.value}
-                                      >
-                                        {option.label}
-                                      </option>
-                                    ))}
+                                  <label className="mb-2 block text-xs font-bold text-slate-500">출하 상태</label>
+                                  <select value={shipmentStatus} onChange={(event) => setShipmentStatus(event.target.value)} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black outline-none">
+                                    {SHIPMENT_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                                   </select>
-
-                                  <label className="mb-2 mt-4 block text-xs font-bold text-slate-500">
-                                    출하수량
-                                  </label>
-
-                                  <input
-                                    type="number"
-                                    value={shippedQuantity}
-                                    onChange={(event) =>
-                                      setShippedQuantity(
-                                        Number(event.target.value)
-                                      )
-                                    }
-                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                                  />
-
-                                  <label className="mb-2 mt-4 block text-xs font-bold text-slate-500">
-                                    출하일
-                                  </label>
-
-                                  <input
-                                    type="date"
-                                    value={shipmentDate}
-                                    onChange={(event) =>
-                                      setShipmentDate(event.target.value)
-                                    }
-                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                                  />
+                                  <label className="mb-2 mt-4 block text-xs font-bold text-slate-500">출하수량</label>
+                                  <input type="number" value={shippedQuantity} onChange={(event) => setShippedQuantity(Number(event.target.value))} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold outline-none" />
+                                  <label className="mb-2 mt-4 block text-xs font-bold text-slate-500">출하일</label>
+                                  <input type="date" value={shipmentDate} onChange={(event) => setShipmentDate(event.target.value)} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold outline-none" />
                                 </div>
 
-                                <div>
-                                  <h3 className="mb-3 text-sm font-black text-slate-950">
+                                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                                  <h3 className="mb-3 text-xs font-black text-slate-700">
                                     출하 메모
                                   </h3>
-
-                                  <label className="mb-2 block text-xs font-bold text-slate-500">
-                                    메모
-                                  </label>
 
                                   <textarea
                                     value={memo}
@@ -632,7 +568,7 @@ const { data: bomItems } = await bomQuery;
                                       setMemo(event.target.value)
                                     }
                                     rows={7}
-                                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
+                                    className="h-[220px] w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold outline-none"
                                     placeholder="포장상태, 납품 특이사항, 거래명세서 송부 여부 등을 입력하세요."
                                   />
                                 </div>
@@ -648,7 +584,7 @@ const { data: bomItems } = await bomQuery;
                 {!rows.length ? (
                   <tr>
                     <td
-                      colSpan={9}
+                      colSpan={10}
                       className="px-4 py-10 text-center text-sm font-bold text-slate-400"
                     >
                       출하 대상 품목이 없습니다. QC 승인 완료 품목이 필요합니다.
@@ -659,6 +595,7 @@ const { data: bomItems } = await bomQuery;
             </table>
           </div>
         </section>
+      </div>
       </div>
     </WorkspaceLayout>
   );

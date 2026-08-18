@@ -1,7 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
+import {
+  AlertCircle,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
+  ClipboardCheck,
+  Filter,
+  RefreshCw,
+  RotateCcw,
+  Save,
+  Search,
+  Timer,
+} from "lucide-react";
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
 import { supabase } from "@/lib/supabase";
@@ -32,16 +46,26 @@ function getNcrStatusBadgeClass(status: string) {
   return "bg-slate-50 text-slate-600";
 }
 
+function formatDate(value: string | null | undefined) {
+  if (!value || value === "-") return "-";
+  return String(value).slice(0, 10).replaceAll("-", ". ") + ".";
+}
+
 export default function NcrManagementPage() {
   const searchParams = useSearchParams();
   const selectedProjectCode = searchParams.get("project");
+  const filterSearchRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
   const [projects, setProjects] = useState<any[]>([]);
   const [rows, setRows] = useState<any[]>([]);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
+
+  const [searchKeyword, setSearchKeyword] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   const [status, setStatus] = useState("registered");
   const [rootCause, setRootCause] = useState("");
@@ -71,6 +95,7 @@ export default function NcrManagementPage() {
 
       if (!currentProject?.id) {
         setRows([]);
+        setSelectedRowId(null);
         setLoading(false);
         return;
       }
@@ -92,10 +117,7 @@ export default function NcrManagementPage() {
         : { data: [] };
 
       const bomMap = new Map();
-
-      bomItems?.forEach((item) => {
-        bomMap.set(String(item.id), item);
-      });
+      bomItems?.forEach((item) => bomMap.set(String(item.id), item));
 
       const nextRows =
         ncrReports?.map((ncr, index) => {
@@ -126,47 +148,76 @@ export default function NcrManagementPage() {
         }) ?? [];
 
       setRows(nextRows);
-
-      const firstRow = nextRows[0];
-
-      if (firstRow) {
-        setSelectedRowId(firstRow.id);
-        setStatus(firstRow.status);
-        setRootCause(firstRow.root_cause ?? "");
-        setCorrectiveAction(firstRow.corrective_action ?? "");
-        setPreventiveAction(firstRow.preventive_action ?? "");
-      } else {
-        setSelectedRowId(null);
-        setStatus("registered");
-        setRootCause("");
-        setCorrectiveAction("");
-        setPreventiveAction("");
-      }
-
+      setSelectedRowId(null);
+      setStatus("registered");
+      setRootCause("");
+      setCorrectiveAction("");
+      setPreventiveAction("");
       setLoading(false);
     }
 
     fetchData();
   }, [selectedProjectCode]);
 
-  const selectedRow = useMemo(() => {
-    return rows.find((row) => row.id === selectedRowId) ?? null;
-  }, [rows, selectedRowId]);
+  const selectedRow = useMemo(
+    () => rows.find((row) => row.id === selectedRowId) ?? null,
+    [rows, selectedRowId]
+  );
+
+  const filteredRows = useMemo(() => {
+    const keyword = searchKeyword.trim().toLowerCase();
+
+    return rows.filter((row) => {
+      const matchesKeyword =
+        !keyword ||
+        [
+          row.ncr_no,
+          row.part_number,
+          row.part_name,
+          row.drawing_no,
+          row.title,
+        ].some((value) => String(value ?? "").toLowerCase().includes(keyword));
+
+      const matchesStatus =
+        statusFilter === "all" || row.status === statusFilter;
+      const createdDate = String(row.created_at ?? "").slice(0, 10);
+      const matchesStartDate = !startDate || createdDate >= startDate;
+      const matchesEndDate = !endDate || createdDate <= endDate;
+
+      return (
+        matchesKeyword &&
+        matchesStatus &&
+        matchesStartDate &&
+        matchesEndDate
+      );
+    });
+  }, [rows, searchKeyword, statusFilter, startDate, endDate]);
 
   const totalCount = rows.length;
-  const registeredCount = rows.filter(
-    (row) => row.status === "registered"
-  ).length;
-  const inActionCount = rows.filter(
-    (row) => row.status === "in_action"
+  const actionRequiredCount = rows.filter(
+    (row) => row.status === "registered" || row.status === "in_action"
   ).length;
   const reinspectionCount = rows.filter(
     (row) => row.status === "reinspection"
   ).length;
-  const closedCount = rows.filter((row) => row.status === "closed").length;
-  const rejectedCount = rows.filter((row) => row.status === "rejected").length;
+  const completedCount = rows.filter(
+    (row) => row.status === "closed" || row.status === "rejected"
+  ).length;
+
+  function clearSelectedRow() {
+    setSelectedRowId(null);
+    setStatus("registered");
+    setRootCause("");
+    setCorrectiveAction("");
+    setPreventiveAction("");
+  }
 
   function handleSelectRow(row: any) {
+    if (selectedRowId === row.id) {
+      clearSelectedRow();
+      return;
+    }
+
     setSelectedRowId(row.id);
     setStatus(row.status);
     setRootCause(row.root_cause ?? "");
@@ -174,11 +225,17 @@ export default function NcrManagementPage() {
     setPreventiveAction(row.preventive_action ?? "");
   }
 
+  function handleResetFilters() {
+    setSearchKeyword("");
+    setStatusFilter("all");
+    setStartDate("");
+    setEndDate("");
+  }
+
   async function handleSave() {
     if (!selectedRow) return;
 
     setSaving(true);
-
     const now = new Date().toISOString();
     const previousStatus = selectedRow.status;
     const nextStatus = status;
@@ -321,378 +378,411 @@ export default function NcrManagementPage() {
 
   return (
     <WorkspaceLayout>
-      <div className="space-y-5">
-        <div className="flex items-start justify-between gap-6">
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-sm font-black text-slate-500">
+            <div className="text-xs font-black text-slate-500">
               품질관리 &gt; NCR 관리
             </div>
-
-            <h1 className="mt-2 text-2xl font-black text-slate-950">
+            <h1 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
               NCR 관리
             </h1>
-
-            <p className="mt-2 text-sm font-medium text-slate-500">
+            <p className="mt-1 text-sm font-semibold text-slate-500">
               부적합 사항의 원인 분석, 조치, 재검사, 종결 상태를 관리합니다.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-              NCR 번호, 품목명, 도면번호 검색
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-[300px] items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold text-slate-400 shadow-sm">
+                <input
+                  value={searchKeyword}
+                  onChange={(event) => setSearchKeyword(event.target.value)}
+                  placeholder="NCR 번호, 품목명, 도면번호 검색"
+                  className="w-full bg-transparent outline-none placeholder:text-slate-400"
+                />
+                <Search className="shrink-0 text-slate-500" size={16} />
+              </div>
+              <button
+                type="button"
+                onClick={() => filterSearchRef.current?.focus()}
+                className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 shadow-sm"
+              >
+                <Filter size={15} />
+                필터
+              </button>
             </div>
-
-            <button className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">
-              필터
-            </button>
+            <div className="flex items-center gap-2 text-xs font-bold text-slate-600">
+              <RefreshCw size={13} />
+              마지막 업데이트
+              <span className="text-slate-950">실시간 데이터 기준</span>
+            </div>
           </div>
         </div>
 
-        <section className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="grid grid-cols-[240px_repeat(5,1fr)] items-center gap-4">
-            <div>
-              <div className="text-xs font-bold text-slate-500">
-                프로젝트 (PO)
-              </div>
-              <div className="mt-3">
-                <ProjectSelector
-                  projects={projects.map((project) => ({
-                    id: project.project_code,
-                    name: `${project.project_code} / ${project.project_name}`,
-                  }))}
-                />
-              </div>
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="grid grid-cols-[240px_repeat(4,1fr)] items-center divide-x divide-slate-100 px-4 py-3">
+            <div className="pr-4">
+              <ProjectSelector
+                projects={projects.map((project) => ({
+                  id: project.project_code,
+                  name: `${project.project_code} / ${project.project_name}`,
+                }))}
+              />
             </div>
 
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">전체 NCR</div>
-              <div className="mt-2 text-2xl font-black text-slate-950">
-                {totalCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">등록</div>
-              <div className="mt-2 text-2xl font-black text-blue-600">
-                {registeredCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">조치중</div>
-              <div className="mt-2 text-2xl font-black text-orange-600">
-                {inActionCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">재검사</div>
-              <div className="mt-2 text-2xl font-black text-purple-600">
-                {reinspectionCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
-            </div>
-
-            <div className="border-l border-slate-200 pl-5">
-              <div className="text-xs font-bold text-slate-500">종결/반려</div>
-              <div className="mt-2 text-2xl font-black text-emerald-600">
-                {closedCount + rejectedCount}
-                <span className="ml-1 text-sm text-slate-500">건</span>
-              </div>
-            </div>
+            <KpiItem
+              icon={<ClipboardCheck size={17} />}
+              iconClass="bg-slate-100 text-slate-700"
+              label="전체 NCR"
+              count={totalCount}
+            />
+            <KpiItem
+              icon={<AlertCircle size={17} />}
+              iconClass="bg-orange-50 text-orange-600"
+              label="조치 필요"
+              count={actionRequiredCount}
+            />
+            <KpiItem
+              icon={<Timer size={17} />}
+              iconClass="bg-purple-50 text-purple-600"
+              label="재검사"
+              count={reinspectionCount}
+            />
+            <KpiItem
+              icon={<CheckCircle2 size={17} />}
+              iconClass="bg-emerald-50 text-emerald-600"
+              label="처리 완료"
+              count={completedCount}
+            />
           </div>
         </section>
 
-        <div className="grid grid-cols-[1fr_320px] gap-5">
-          <section className="rounded-2xl border border-slate-200 bg-white">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="w-72 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-500">
-                  NCR 번호 / 품목명 검색
-                </div>
-
-                <select className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700">
-                  <option>상태 전체</option>
-                </select>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={!selectedRow || saving}
-                className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-black text-white hover:bg-blue-700 disabled:bg-slate-300"
-              >
-                {saving ? "저장 중..." : "NCR 결과 저장"}
-              </button>
+        <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          <div className="grid grid-cols-[1fr_140px_160px_160px_82px] gap-2">
+            <div className="flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-400">
+              <Search size={15} />
+              <input
+                ref={filterSearchRef}
+                value={searchKeyword}
+                onChange={(event) => setSearchKeyword(event.target.value)}
+                placeholder="NCR 번호, 품목명, 도면번호 검색"
+                className="w-full bg-transparent outline-none"
+              />
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1000px] text-left text-sm">
-                <thead className="bg-slate-50 text-xs font-black text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">No.</th>
-                    <th className="px-4 py-3">NCR 번호</th>
-                    <th className="px-4 py-3">품목</th>
-                    <th className="px-4 py-3">도면번호</th>
-                    <th className="px-4 py-3">제목</th>
-                    <th className="px-4 py-3">상태</th>
-                    <th className="px-4 py-3">발생일</th>
-                  </tr>
-                </thead>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value)}
+              className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none"
+            >
+              <option value="all">상태 전체</option>
+              {NCR_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-                <tbody className="divide-y divide-slate-100">
-                  {rows.map((row) => {
-                    const active = selectedRowId === row.id;
+            <div className="relative flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3">
+              <CalendarDays size={14} className="shrink-0 text-slate-500" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+                className="min-w-0 w-full bg-transparent text-xs font-black text-slate-700 outline-none"
+                aria-label="발생일 시작일"
+              />
+            </div>
 
-                    return (
-                      <tr
-                        key={row.id}
-                        onClick={() => handleSelectRow(row)}
-                        className={[
-                          "cursor-pointer hover:bg-blue-50",
-                          active ? "bg-blue-50" : "",
-                        ].join(" ")}
-                      >
-                        <td className="px-4 py-3 font-bold text-slate-600">
-                          {row.no}
-                        </td>
+            <div className="relative flex h-9 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3">
+              <CalendarDays size={14} className="shrink-0 text-slate-500" />
+              <input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+                className="min-w-0 w-full bg-transparent text-xs font-black text-slate-700 outline-none"
+                aria-label="발생일 종료일"
+              />
+            </div>
 
-                        <td className="px-4 py-3 font-black text-blue-600">
-                          {row.ncr_no}
-                        </td>
+            <button
+              type="button"
+              onClick={handleResetFilters}
+              className="flex h-9 items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white text-xs font-black text-slate-700"
+            >
+              <RotateCcw size={13} />
+              초기화
+            </button>
+          </div>
+        </section>
 
-                        <td className="px-4 py-3">
-                          <div className="font-black text-slate-950">
-                            {row.part_number}
-                          </div>
-                          <div className="text-xs font-medium text-slate-500">
-                            {row.part_name}
-                          </div>
-                        </td>
+        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div className="text-xs font-black text-slate-600">
+              전체 {filteredRows.length}건
+            </div>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={!selectedRow || saving}
+              className="flex h-9 items-center gap-2 rounded-xl bg-blue-600 px-4 text-xs font-black text-white hover:bg-blue-700 disabled:bg-slate-300"
+            >
+              <Save size={14} />
+              {saving ? "저장 중..." : "NCR 결과 저장"}
+            </button>
+          </div>
 
-                        <td className="px-4 py-3 font-medium text-slate-600">
-                          {row.drawing_no}
-                        </td>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1120px] text-left text-xs">
+              <thead className="bg-slate-50 text-[11px] font-black text-slate-500">
+                <tr>
+                  <th className="px-3 py-3">선택</th>
+                  <th className="px-3 py-3">No.</th>
+                  <th className="px-3 py-3">NCR 번호</th>
+                  <th className="px-3 py-3">품목 코드</th>
+                  <th className="px-3 py-3">품목명</th>
+                  <th className="px-3 py-3">도면번호</th>
+                  <th className="px-3 py-3">제목</th>
+                  <th className="px-3 py-3">상태</th>
+                  <th className="px-3 py-3">발생일</th>
+                  <th className="px-3 py-3 text-center">상세</th>
+                </tr>
+              </thead>
 
-                        <td className="px-4 py-3 font-bold text-slate-800">
-                          {row.title}
-                        </td>
-
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-lg px-2 py-1 text-xs font-black ${getNcrStatusBadgeClass(
-                              row.status
-                            )}`}
-                          >
-                            {getNcrStatusLabel(row.status)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 font-bold text-slate-600">
-                          {row.created_at === "-"
-                            ? "-"
-                            : String(row.created_at).slice(0, 10)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-
-                  {!rows.length ? (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className="px-4 py-10 text-center text-sm font-bold text-slate-400"
-                      >
-                        NCR 데이터가 없습니다.
+              <tbody className="divide-y divide-slate-100">
+                {filteredRows.map((row) => (
+                  <Fragment key={row.id}>
+                    <tr
+                      onClick={() => handleSelectRow(row)}
+                      className={[
+                        "cursor-pointer hover:bg-slate-50",
+                        selectedRowId === row.id ? "bg-blue-50/50" : "",
+                      ].join(" ")}
+                    >
+                      <td className="px-3 py-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedRowId === row.id}
+                          readOnly
+                          className="h-4 w-4 accent-blue-600"
+                        />
+                      </td>
+                      <td className="px-3 py-3 font-bold text-slate-600">
+                        {row.no}
+                      </td>
+                      <td className="px-3 py-3 font-black text-blue-600">
+                        {row.ncr_no}
+                      </td>
+                      <td className="px-3 py-3 font-black text-slate-950">
+                        {row.part_number}
+                      </td>
+                      <td className="px-3 py-3 font-bold text-slate-800">
+                        {row.part_name}
+                      </td>
+                      <td className="px-3 py-3 font-semibold text-slate-600">
+                        {row.drawing_no}
+                      </td>
+                      <td className="px-3 py-3 font-bold text-slate-800">
+                        {row.title}
+                      </td>
+                      <td className="px-3 py-3">
+                        <span
+                          className={`rounded-lg px-2.5 py-1 text-[11px] font-black ${getNcrStatusBadgeClass(
+                            row.status
+                          )}`}
+                        >
+                          {getNcrStatusLabel(row.status)}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 font-bold text-slate-700">
+                        {formatDate(row.created_at)}
+                      </td>
+                      <td className="px-3 py-3 text-center">
+                        <ChevronDown
+                          size={15}
+                          className={[
+                            "mx-auto text-slate-500 transition",
+                            selectedRowId === row.id ? "rotate-180" : "",
+                          ].join(" ")}
+                        />
                       </td>
                     </tr>
-                  ) : null}
-                </tbody>
-              </table>
-            </div>
 
-            {selectedRow ? (
-              <div className="border-t border-slate-200 p-5">
-                <div className="mb-5 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-lg font-black text-slate-950">
-                      {selectedRow.ncr_no} / {selectedRow.part_name}
-                    </h2>
-                    <p className="mt-1 text-sm font-medium text-slate-500">
-                      {selectedRow.title}
-                    </p>
-                  </div>
+                    {selectedRowId === row.id && (
+                      <tr>
+                        <td colSpan={10} className="bg-white p-0">
+                          <div className="border-t border-slate-200 p-4">
+                            <div className="mb-4 flex items-center gap-3">
+                              <h2 className="text-sm font-black text-slate-950">
+                                {row.ncr_no} / {row.part_number} / {row.part_name}
+                              </h2>
+                              <span
+                                className={`rounded-lg px-2.5 py-1 text-[11px] font-black ${getNcrStatusBadgeClass(
+                                  status
+                                )}`}
+                              >
+                                {getNcrStatusLabel(status)}
+                              </span>
+                            </div>
 
-                  <span
-                    className={`rounded-lg px-3 py-1.5 text-xs font-black ${getNcrStatusBadgeClass(
-                      status
-                    )}`}
-                  >
-                    {getNcrStatusLabel(status)}
-                  </span>
-                </div>
+                            <div className="grid items-stretch gap-4 xl:grid-cols-2">
+                              <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                                <h3 className="mb-3 text-xs font-black text-slate-700">
+                                  원인 분석 / 조치 내용
+                                </h3>
+                                <div className="grid gap-3 lg:grid-cols-2">
+                                  <div>
+                                    <label className="mb-1 block text-xs font-black text-slate-500">
+                                      원인 분석
+                                    </label>
+                                    <textarea
+                                      value={rootCause}
+                                      onChange={(event) =>
+                                        setRootCause(event.target.value)
+                                      }
+                                      className="h-44 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
+                                      placeholder="부적합 원인을 입력하세요."
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="mb-1 block text-xs font-black text-slate-500">
+                                      조치 내용
+                                    </label>
+                                    <textarea
+                                      value={correctiveAction}
+                                      onChange={(event) =>
+                                        setCorrectiveAction(event.target.value)
+                                      }
+                                      className="h-44 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
+                                      placeholder="시정 조치 내용을 입력하세요."
+                                    />
+                                  </div>
+                                </div>
+                              </div>
 
-                <div className="grid grid-cols-4 gap-5">
-                  <div>
-                    <h3 className="mb-3 text-sm font-black text-slate-950">
-                      기본 정보
-                    </h3>
+                              <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50/50 p-4">
+                                <h3 className="mb-3 text-xs font-black text-slate-700">
+                                  상태 / 재발 방지 / 첨부파일
+                                </h3>
+                                <div className="grid gap-3 lg:grid-cols-2">
+                                  <div className="space-y-3">
+                                    <div>
+                                      <label className="mb-1 block text-xs font-black text-slate-500">
+                                        NCR 상태
+                                      </label>
+                                      <select
+                                        value={status}
+                                        onChange={(event) =>
+                                          setStatus(event.target.value)
+                                        }
+                                        className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none"
+                                      >
+                                        {NCR_STATUS_OPTIONS.map((option) => (
+                                          <option
+                                            key={option.value}
+                                            value={option.value}
+                                          >
+                                            {option.label}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </div>
+                                    <div>
+                                      <label className="mb-1 block text-xs font-black text-slate-500">
+                                        재발 방지
+                                      </label>
+                                      <textarea
+                                        value={preventiveAction}
+                                        onChange={(event) =>
+                                          setPreventiveAction(event.target.value)
+                                        }
+                                        className="h-[118px] w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
+                                        placeholder="재발 방지 대책을 입력하세요."
+                                      />
+                                    </div>
+                                  </div>
 
-                    <div className="space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">품목 코드</span>
-                        <span className="font-bold">
-                          {selectedRow.part_number}
-                        </span>
-                      </div>
+                                  <div>
+                                    <div className="mb-1 text-xs font-black text-slate-500">
+                                      첨부파일
+                                    </div>
+                                    <div className="space-y-2">
+                                      {[
+                                        `부적합보고서_${row.part_number}.pdf`,
+                                        `원인분석_${row.part_number}.pdf`,
+                                        `개선대책_${row.part_number}.pdf`,
+                                      ].map((fileName) => (
+                                        <div
+                                          key={fileName}
+                                          className="rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                                        >
+                                          <div className="truncate text-xs font-black text-slate-800">
+                                            {fileName}
+                                          </div>
+                                          <div className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                                            PDF / 업로드 예정
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
 
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">품목명</span>
-                        <span className="font-bold">
-                          {selectedRow.part_name}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">도면 번호</span>
-                        <span className="font-bold">
-                          {selectedRow.drawing_no}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">소재</span>
-                        <span className="font-bold">
-                          {selectedRow.material}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between">
-                        <span className="text-slate-500">수량</span>
-                        <span className="font-bold">
-                          {selectedRow.quantity} {selectedRow.unit}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="mb-3 text-sm font-black text-slate-950">
-                      원인 분석
-                    </h3>
-
-                    <textarea
-                      value={rootCause}
-                      onChange={(event) => setRootCause(event.target.value)}
-                      rows={8}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      placeholder="부적합 원인을 입력하세요."
-                    />
-                  </div>
-
-                  <div>
-                    <h3 className="mb-3 text-sm font-black text-slate-950">
-                      조치 내용
-                    </h3>
-
-                    <textarea
-                      value={correctiveAction}
-                      onChange={(event) =>
-                        setCorrectiveAction(event.target.value)
-                      }
-                      rows={8}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      placeholder="시정 조치 내용을 입력하세요."
-                    />
-                  </div>
-
-                  <div>
-                    <h3 className="mb-3 text-sm font-black text-slate-950">
-                      상태 / 재발 방지
-                    </h3>
-
-                    <label className="mb-2 block text-xs font-bold text-slate-500">
-                      NCR 상태
-                    </label>
-
-                    <select
-                      value={status}
-                      onChange={(event) => setStatus(event.target.value)}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold"
+                {filteredRows.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={10}
+                      className="px-4 py-12 text-center text-sm font-bold text-slate-400"
                     >
-                      {NCR_STATUS_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-
-                    <label className="mb-2 mt-4 block text-xs font-bold text-slate-500">
-                      재발 방지
-                    </label>
-
-                    <textarea
-                      value={preventiveAction}
-                      onChange={(event) =>
-                        setPreventiveAction(event.target.value)
-                      }
-                      rows={5}
-                      className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                      placeholder="재발 방지 대책을 입력하세요."
-                    />
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </section>
-
-          <aside className="rounded-2xl border border-slate-200 bg-white p-5">
-            <h2 className="text-lg font-black text-slate-950">첨부파일</h2>
-
-            {selectedRow ? (
-              <div className="mt-5 space-y-4">
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <div className="text-sm font-black text-slate-950">
-                    부적합보고서_{selectedRow.part_number}.pdf
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    PDF / 업로드 예정
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <div className="text-sm font-black text-slate-950">
-                    원인분석_{selectedRow.part_number}.pdf
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    PDF / 업로드 예정
-                  </div>
-                </div>
-
-                <div className="rounded-xl border border-slate-200 p-3">
-                  <div className="text-sm font-black text-slate-950">
-                    개선대책_{selectedRow.part_number}.pdf
-                  </div>
-                  <div className="mt-1 text-xs text-slate-500">
-                    PDF / 업로드 예정
-                  </div>
-                </div>
-
-                <button className="w-full rounded-xl border border-blue-500 px-4 py-3 text-sm font-black text-blue-600">
-                  모든 파일 다운로드
-                </button>
-              </div>
-            ) : (
-              <div className="mt-10 text-center text-sm font-bold text-slate-400">
-                NCR 항목을 선택하세요.
-              </div>
-            )}
-          </aside>
-        </div>
+                      표시할 NCR 항목이 없습니다.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </WorkspaceLayout>
+  );
+}
+
+function KpiItem({
+  icon,
+  iconClass,
+  label,
+  count,
+}: {
+  icon: ReactNode;
+  iconClass: string;
+  label: string;
+  count: number;
+}) {
+  return (
+    <div className="px-4">
+      <div className="flex items-center gap-3">
+        <div
+          className={`flex h-9 w-9 items-center justify-center rounded-full ${iconClass}`}
+        >
+          {icon}
+        </div>
+        <div>
+          <div className="text-[11px] font-black text-slate-500">{label}</div>
+          <div className="mt-0.5 text-xl font-black text-slate-950">
+            {count}
+            <span className="ml-1 text-xs font-bold text-slate-500">건</span>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
