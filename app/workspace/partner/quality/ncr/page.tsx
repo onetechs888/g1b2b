@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { ChangeEvent, ReactNode, RefObject } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -10,15 +10,20 @@ import {
   ChevronDown,
   ClipboardCheck,
   Filter,
+  FileText,
+  Loader2,
   RefreshCw,
   RotateCcw,
   Save,
   Search,
   Timer,
+  Upload,
 } from "lucide-react";
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
+import { useNcrFiles } from "@/hooks/partner/useNcrFiles";
 import { supabase } from "@/lib/supabase";
+import type { NcrFileType } from "@/services/partner/ncrFileService";
 
 const NCR_STATUS_OPTIONS = [
   { value: "registered", label: "등록" },
@@ -26,6 +31,18 @@ const NCR_STATUS_OPTIONS = [
   { value: "reinspection", label: "재검사" },
   { value: "closed", label: "종결" },
   { value: "rejected", label: "반려" },
+];
+
+const NCR_FILE_TYPES: NcrFileType[] = [
+  "ncr_report",
+  "root_cause_report",
+  "corrective_action_report",
+];
+
+const NCR_FILE_CONFIG: { type: NcrFileType; label: string }[] = [
+  { type: "ncr_report", label: "부적합보고서" },
+  { type: "root_cause_report", label: "원인분석서" },
+  { type: "corrective_action_report", label: "개선대책서" },
 ];
 
 function getNcrStatusLabel(status: string) {
@@ -55,6 +72,9 @@ export default function NcrManagementPage() {
   const searchParams = useSearchParams();
   const selectedProjectCode = searchParams.get("project");
   const filterSearchRef = useRef<HTMLInputElement>(null);
+  const ncrReportInputRef = useRef<HTMLInputElement>(null);
+  const rootCauseReportInputRef = useRef<HTMLInputElement>(null);
+  const correctiveActionReportInputRef = useRef<HTMLInputElement>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -71,6 +91,8 @@ export default function NcrManagementPage() {
   const [rootCause, setRootCause] = useState("");
   const [correctiveAction, setCorrectiveAction] = useState("");
   const [preventiveAction, setPreventiveAction] = useState("");
+  const [pressedFileType, setPressedFileType] = useState<NcrFileType | null>(null);
+  const [draftsByRowId, setDraftsByRowId] = useState<Record<string, NcrDraft>>({});
 
   useEffect(() => {
     async function fetchData() {
@@ -153,6 +175,7 @@ export default function NcrManagementPage() {
       setRootCause("");
       setCorrectiveAction("");
       setPreventiveAction("");
+      setDraftsByRowId({});
       setLoading(false);
     }
 
@@ -163,6 +186,49 @@ export default function NcrManagementPage() {
     () => rows.find((row) => row.id === selectedRowId) ?? null,
     [rows, selectedRowId]
   );
+
+  const {
+    byType: savedFilesByType,
+    loading: filesLoading,
+    uploadingType,
+    error: fileError,
+    uploadFile,
+  } = useNcrFiles(selectedRow?.project_id, selectedRow?.id);
+
+  const selectedDraft = selectedRowId
+    ? draftsByRowId[selectedRowId] ?? null
+    : null;
+  const pendingFiles = selectedDraft?.files ?? createEmptyNcrFiles();
+  const hasUnsavedDrafts = Object.keys(draftsByRowId).length > 0;
+
+  useEffect(() => {
+    if (!hasUnsavedDrafts) return;
+
+    const warningMessage =
+      "저장하지 않은 NCR 결과 또는 첨부파일이 있습니다.\n\n뒤로가면 임시 저장 내용이 모두 초기화됩니다.\n페이지를 이동하시겠습니까?";
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handlePopState = () => {
+      if (window.confirm(warningMessage)) {
+        setDraftsByRowId({});
+        return;
+      }
+
+      window.history.forward();
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [hasUnsavedDrafts]);
 
   const filteredRows = useMemo(() => {
     const keyword = searchKeyword.trim().toLowerCase();
@@ -218,11 +284,92 @@ export default function NcrManagementPage() {
       return;
     }
 
+    const draft = draftsByRowId[row.id];
+
     setSelectedRowId(row.id);
-    setStatus(row.status);
-    setRootCause(row.root_cause ?? "");
-    setCorrectiveAction(row.corrective_action ?? "");
-    setPreventiveAction(row.preventive_action ?? "");
+    setStatus(draft?.status ?? row.status);
+    setRootCause(draft?.rootCause ?? row.root_cause ?? "");
+    setCorrectiveAction(draft?.correctiveAction ?? row.corrective_action ?? "");
+    setPreventiveAction(draft?.preventiveAction ?? row.preventive_action ?? "");
+  }
+
+  function updateSelectedDraft(patch: Partial<NcrDraft>) {
+    if (!selectedRowId) return;
+
+    setDraftsByRowId((current) => {
+      const existing = current[selectedRowId] ?? {
+        status,
+        rootCause,
+        correctiveAction,
+        preventiveAction,
+        files: createEmptyNcrFiles(),
+      };
+
+      return {
+        ...current,
+        [selectedRowId]: { ...existing, ...patch },
+      };
+    });
+  }
+
+  function handleStatusChange(value: string) {
+    setStatus(value);
+    updateSelectedDraft({ status: value });
+  }
+
+  function handleRootCauseChange(value: string) {
+    setRootCause(value);
+    updateSelectedDraft({ rootCause: value });
+  }
+
+  function handleCorrectiveActionChange(value: string) {
+    setCorrectiveAction(value);
+    updateSelectedDraft({ correctiveAction: value });
+  }
+
+  function handlePreventiveActionChange(value: string) {
+    setPreventiveAction(value);
+    updateSelectedDraft({ preventiveAction: value });
+  }
+
+  function openFilePicker(fileType: NcrFileType) {
+    const inputMap: Record<NcrFileType, RefObject<HTMLInputElement | null>> = {
+      ncr_report: ncrReportInputRef,
+      root_cause_report: rootCauseReportInputRef,
+      corrective_action_report: correctiveActionReportInputRef,
+    };
+
+    setPressedFileType(fileType);
+    inputMap[fileType].current?.click();
+    window.setTimeout(() => setPressedFileType(null), 180);
+  }
+
+  function handleFileChange(
+    fileType: NcrFileType,
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    setPressedFileType(null);
+    if (!file || !selectedRowId) return;
+
+    const extension = file.name.toLowerCase().split(".").at(-1);
+    if (extension !== "pdf" || (file.type && file.type !== "application/pdf")) {
+      alert("NCR 첨부자료는 PDF 파일만 선택할 수 있습니다.");
+      return;
+    }
+
+    const current = draftsByRowId[selectedRowId] ?? {
+      status,
+      rootCause,
+      correctiveAction,
+      preventiveAction,
+      files: createEmptyNcrFiles(),
+    };
+
+    updateSelectedDraft({
+      files: { ...current.files, [fileType]: file },
+    });
   }
 
   function handleResetFilters() {
@@ -236,17 +383,22 @@ export default function NcrManagementPage() {
     if (!selectedRow) return;
 
     setSaving(true);
+    const draft = draftsByRowId[selectedRow.id];
     const now = new Date().toISOString();
     const previousStatus = selectedRow.status;
-    const nextStatus = status;
+    const nextStatus = draft?.status ?? status;
+    const nextRootCause = draft?.rootCause ?? rootCause;
+    const nextCorrectiveAction = draft?.correctiveAction ?? correctiveAction;
+    const nextPreventiveAction = draft?.preventiveAction ?? preventiveAction;
+    const nextFiles = draft?.files ?? createEmptyNcrFiles();
 
     const { error: updateError } = await supabase
       .from("ncr_reports")
       .update({
         status: nextStatus,
-        root_cause: rootCause,
-        corrective_action: correctiveAction,
-        preventive_action: preventiveAction,
+        root_cause: nextRootCause,
+        corrective_action: nextCorrectiveAction,
+        preventive_action: nextPreventiveAction,
         closed_at: nextStatus === "closed" ? now : null,
         updated_at: now,
       })
@@ -353,14 +505,41 @@ export default function NcrManagementPage() {
           ? {
               ...row,
               status: nextStatus,
-              root_cause: rootCause,
-              corrective_action: correctiveAction,
-              preventive_action: preventiveAction,
+              root_cause: nextRootCause,
+              corrective_action: nextCorrectiveAction,
+              preventive_action: nextPreventiveAction,
               closed_at: nextStatus === "closed" ? now : null,
             }
           : row
       )
     );
+
+    try {
+      for (const fileType of NCR_FILE_TYPES) {
+        const pendingFile = nextFiles[fileType];
+        if (!pendingFile) continue;
+
+        const uploaded = await uploadFile(fileType, pendingFile);
+        if (!uploaded) {
+          throw new Error(`${pendingFile.name} 저장에 실패했습니다.`);
+        }
+      }
+    } catch (fileSaveError) {
+      console.error("NCR 첨부자료 저장 실패:", fileSaveError);
+      alert(
+        fileSaveError instanceof Error
+          ? fileSaveError.message
+          : "NCR 첨부자료 저장에 실패했습니다.",
+      );
+      setSaving(false);
+      return;
+    }
+
+    setDraftsByRowId((current) => {
+      const next = { ...current };
+      delete next[selectedRow.id];
+      return next;
+    });
 
     setSaving(false);
     alert("NCR 정보가 저장되었습니다.");
@@ -639,7 +818,7 @@ export default function NcrManagementPage() {
                                     <textarea
                                       value={rootCause}
                                       onChange={(event) =>
-                                        setRootCause(event.target.value)
+                                        handleRootCauseChange(event.target.value)
                                       }
                                       className="h-44 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
                                       placeholder="부적합 원인을 입력하세요."
@@ -652,7 +831,7 @@ export default function NcrManagementPage() {
                                     <textarea
                                       value={correctiveAction}
                                       onChange={(event) =>
-                                        setCorrectiveAction(event.target.value)
+                                        handleCorrectiveActionChange(event.target.value)
                                       }
                                       className="h-44 w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
                                       placeholder="시정 조치 내용을 입력하세요."
@@ -674,7 +853,7 @@ export default function NcrManagementPage() {
                                       <select
                                         value={status}
                                         onChange={(event) =>
-                                          setStatus(event.target.value)
+                                          handleStatusChange(event.target.value)
                                         }
                                         className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none"
                                       >
@@ -695,7 +874,7 @@ export default function NcrManagementPage() {
                                       <textarea
                                         value={preventiveAction}
                                         onChange={(event) =>
-                                          setPreventiveAction(event.target.value)
+                                          handlePreventiveActionChange(event.target.value)
                                         }
                                         className="h-[118px] w-full resize-none rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 outline-none"
                                         placeholder="재발 방지 대책을 입력하세요."
@@ -707,25 +886,98 @@ export default function NcrManagementPage() {
                                     <div className="mb-1 text-xs font-black text-slate-500">
                                       첨부파일
                                     </div>
+                                    <input
+                                      ref={ncrReportInputRef}
+                                      type="file"
+                                      accept="application/pdf,.pdf"
+                                      className="hidden"
+                                      onChange={(event) =>
+                                        handleFileChange("ncr_report", event)
+                                      }
+                                    />
+                                    <input
+                                      ref={rootCauseReportInputRef}
+                                      type="file"
+                                      accept="application/pdf,.pdf"
+                                      className="hidden"
+                                      onChange={(event) =>
+                                        handleFileChange("root_cause_report", event)
+                                      }
+                                    />
+                                    <input
+                                      ref={correctiveActionReportInputRef}
+                                      type="file"
+                                      accept="application/pdf,.pdf"
+                                      className="hidden"
+                                      onChange={(event) =>
+                                        handleFileChange("corrective_action_report", event)
+                                      }
+                                    />
                                     <div className="space-y-2">
-                                      {[
-                                        `부적합보고서_${row.part_number}.pdf`,
-                                        `원인분석_${row.part_number}.pdf`,
-                                        `개선대책_${row.part_number}.pdf`,
-                                      ].map((fileName) => (
+                                      {NCR_FILE_CONFIG.map((fileConfig) => {
+                                        const pendingFile =
+                                          pendingFiles[fileConfig.type];
+                                        const savedFile =
+                                          savedFilesByType[fileConfig.type];
+                                        const displayedName =
+                                          pendingFile?.name ??
+                                          savedFile?.file_name ??
+                                          `${fileConfig.label}_${row.part_number}.pdf`;
+
+                                        return (
                                         <div
-                                          key={fileName}
-                                          className="rounded-xl border border-slate-200 bg-white px-3 py-2.5"
+                                          key={fileConfig.type}
+                                          className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2.5"
                                         >
-                                          <div className="truncate text-xs font-black text-slate-800">
-                                            {fileName}
+                                          <div className="flex min-w-0 items-center gap-2">
+                                            <FileText
+                                              size={16}
+                                              className="shrink-0 text-red-500"
+                                            />
+                                            <div className="min-w-0">
+                                              <div className="truncate text-xs font-black text-slate-800">
+                                                {displayedName}
+                                              </div>
+                                              <div className="mt-0.5 text-[11px] font-semibold text-slate-400">
+                                                {pendingFile
+                                                  ? "저장 대기 · NCR 결과 저장 시 업로드"
+                                                  : savedFile
+                                                    ? "업로드 완료"
+                                                    : "PDF 파일을 선택해 주세요."}
+                                              </div>
+                                            </div>
                                           </div>
-                                          <div className="mt-0.5 text-[11px] font-semibold text-slate-400">
-                                            PDF / 업로드 예정
-                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              openFilePicker(fileConfig.type)
+                                            }
+                                            disabled={saving || filesLoading}
+                                            className="flex h-8 shrink-0 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-[11px] font-black text-white transition hover:bg-blue-700 active:scale-95 disabled:bg-slate-300"
+                                          >
+                                            {uploadingType === fileConfig.type ? (
+                                              <Loader2
+                                                size={13}
+                                                className="animate-spin"
+                                              />
+                                            ) : (
+                                              <Upload size={13} />
+                                            )}
+                                            {pressedFileType === fileConfig.type
+                                              ? "선택 중"
+                                              : pendingFile || savedFile
+                                                ? "재업로드"
+                                                : "업로드"}
+                                          </button>
                                         </div>
-                                      ))}
+                                        );
+                                      })}
                                     </div>
+                                    {fileError && (
+                                      <div className="mt-2 text-[11px] font-bold text-red-600">
+                                        {fileError}
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               </div>
@@ -785,4 +1037,22 @@ function KpiItem({
       </div>
     </div>
   );
+}
+
+type NcrPendingFiles = Record<NcrFileType, File | null>;
+
+type NcrDraft = {
+  status: string;
+  rootCause: string;
+  correctiveAction: string;
+  preventiveAction: string;
+  files: NcrPendingFiles;
+};
+
+function createEmptyNcrFiles(): NcrPendingFiles {
+  return {
+    ncr_report: null,
+    root_cause_report: null,
+    corrective_action_report: null,
+  };
 }

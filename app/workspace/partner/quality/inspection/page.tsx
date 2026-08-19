@@ -1,6 +1,7 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   AlertCircle,
@@ -9,11 +10,11 @@ import {
   ChevronDown,
   ClipboardCheck,
   Download,
-  Eye,
   FileSpreadsheet,
   FileText,
   Filter,
   ImageIcon,
+  Loader2,
   RefreshCw,
   Save,
   Search,
@@ -24,7 +25,9 @@ import {
 
 import WorkspaceLayout from "@/components/workspace/WorkspaceLayout";
 import ProjectSelector from "@/components/workspace/ProjectSelector";
+import { useQualityEvidenceFiles } from "@/hooks/partner/useQualityEvidenceFiles";
 import { supabase } from "@/lib/supabase";
+import type { QualityFileType } from "@/services/partner/qualityFileService";
 
 const QC_STATUS_OPTIONS = [
   { value: "requested", label: "검사요청" },
@@ -94,6 +97,14 @@ export default function QualityInspectionPage() {
   const [selectedDecision, setSelectedDecision] = useState("");
   const [memo, setMemo] = useState("");
   const [changedIds, setChangedIds] = useState<Set<string>>(new Set());
+  const [pressedFileType, setPressedFileType] =
+    useState<QualityFileType | null>(null);
+  const [draftsByRowId, setDraftsByRowId] =
+    useState<Record<string, InspectionDraft>>({});
+
+  const inspectionReportInputRef = useRef<HTMLInputElement>(null);
+  const measurementDataInputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchData() {
@@ -203,6 +214,7 @@ export default function QualityInspectionPage() {
       setMemo("");
 
       setChangedIds(new Set());
+      setDraftsByRowId({});
       setLoading(false);
     }
 
@@ -212,6 +224,74 @@ export default function QualityInspectionPage() {
   const selectedRow = useMemo(() => {
     return rows.find((row) => row.id === selectedRowId) ?? null;
   }, [rows, selectedRowId]);
+
+  const {
+    inspectionReport,
+    measurementData,
+    images,
+    previewUrls,
+    loading: evidenceLoading,
+    uploadingType,
+    deletingId,
+    error: evidenceError,
+    uploadFile,
+    removeFile,
+    clearError: clearEvidenceError,
+  } = useQualityEvidenceFiles(
+    selectedRow?.project_id,
+    selectedRow?.id,
+  );
+
+  const selectedDraft = selectedRow
+    ? draftsByRowId[selectedRow.id] ?? null
+    : null;
+
+  const pendingEvidence =
+    selectedDraft?.evidence ?? createEmptyEvidenceDraft();
+
+  const hasUnsavedChanges = changedIds.size > 0;
+
+  useEffect(() => {
+    function handleBeforeUnload(event: BeforeUnloadEvent) {
+      if (!hasUnsavedChanges) {
+        return;
+      }
+
+      event.preventDefault();
+      event.returnValue = "";
+    }
+
+    function handlePopState() {
+      if (!hasUnsavedChanges) {
+        return;
+      }
+
+      const confirmed = window.confirm(
+        [
+          "저장하지 않은 검사결과 또는 증빙자료가 있습니다.",
+          "",
+          "뒤로가면 임시 저장 내용이 모두 초기화됩니다.",
+          "페이지를 이동하시겠습니까?",
+        ].join("\n"),
+      );
+
+      if (confirmed) {
+        setDraftsByRowId({});
+        setChangedIds(new Set());
+        return;
+      }
+
+      window.history.forward();
+    }
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    window.addEventListener("popstate", handlePopState);
+
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      window.removeEventListener("popstate", handlePopState);
+    };
+  }, [hasUnsavedChanges]);
 
   const filteredRows = useMemo(() => {
     return rows.filter((row) => {
@@ -251,78 +331,241 @@ export default function QualityInspectionPage() {
   );
 
   function handleSelectRow(row: any) {
-    setSelectedRowId((prev) => (prev === row.id ? null : row.id));
+    if (selectedRowId === row.id) {
+      setSelectedRowId(null);
+      return;
+    }
+
+    const draft = draftsByRowId[row.id];
+
+    setSelectedRowId(row.id);
     setSelectedStatus(row.qc_status);
-    setSelectedDecision("");
-    setMemo(row.memo ?? "");
+    setSelectedDecision(draft?.decision ?? "");
+    setMemo(draft?.memo ?? row.memo ?? "");
   }
 
-  function markChanged(nextStatus: string, nextMemo: string) {
-    if (!selectedRow) return;
-
+  function setRowChanged(rowId: string, changed: boolean) {
     setChangedIds((prev) => {
       const next = new Set(prev);
 
-      if (nextStatus !== selectedRow.qc_status || nextMemo !== selectedRow.memo) {
-        next.add(selectedRow.id);
+      if (changed) {
+        next.add(rowId);
       } else {
-        next.delete(selectedRow.id);
+        next.delete(rowId);
       }
-
       return next;
     });
   }
 
+  function updateSelectedDraft(
+    updater: (current: InspectionDraft) => InspectionDraft,
+  ) {
+    if (!selectedRow) {
+      return;
+    }
+
+    setDraftsByRowId((prev) => {
+      const current = prev[selectedRow.id] ?? {
+        decision: "",
+        memo: selectedRow.memo ?? "",
+        evidence: createEmptyEvidenceDraft(),
+      };
+
+      return {
+        ...prev,
+        [selectedRow.id]: updater(current),
+      };
+    });
+
+    setRowChanged(selectedRow.id, true);
+  }
+
+  function handleDecisionChange(value: string) {
+    setSelectedDecision(value);
+    updateSelectedDraft((current) => ({
+      ...current,
+      decision: value,
+    }));
+  }
+
   function handleMemoChange(value: string) {
     setMemo(value);
-    markChanged(selectedStatus, value);
+    updateSelectedDraft((current) => ({
+      ...current,
+      memo: value,
+    }));
+  }
+
+  function openEvidenceFilePicker(
+    fileType: QualityFileType,
+    input: HTMLInputElement | null,
+  ) {
+    if (!input || saving || uploadingType !== null) {
+      return;
+    }
+
+    setPressedFileType(fileType);
+
+    const releasePressedState = () => {
+      window.setTimeout(() => {
+        setPressedFileType(null);
+      }, 350);
+    };
+
+    window.addEventListener("focus", releasePressedState, { once: true });
+    input.click();
+  }
+
+  function handleEvidenceFileChange(
+    fileType: QualityFileType,
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    setPressedFileType(null);
+
+    if (!file) {
+      return;
+    }
+
+    clearEvidenceError();
+    updateSelectedDraft((current) => ({
+      ...current,
+      evidence: {
+        ...current.evidence,
+        inspectionReport:
+          fileType === "inspection_report"
+            ? file
+            : current.evidence.inspectionReport,
+        measurementData:
+          fileType === "measurement_data"
+            ? file
+            : current.evidence.measurementData,
+      },
+    }));
+  }
+
+  function handleImageFilesChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const selectedFiles = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    setPressedFileType(null);
+
+    if (!selectedFiles.length) {
+      return;
+    }
+
+    clearEvidenceError();
+    updateSelectedDraft((current) => ({
+      ...current,
+      evidence: {
+        ...current.evidence,
+        images: [...current.evidence.images, ...selectedFiles],
+      },
+    }));
+  }
+
+  function handleRemovePendingImage(index: number) {
+    updateSelectedDraft((current) => ({
+      ...current,
+      evidence: {
+        ...current.evidence,
+        images: current.evidence.images.filter(
+          (_, imageIndex) => imageIndex !== index,
+        ),
+      },
+    }));
+  }
+
+  async function handleRemoveEvidenceFile(
+    fileId: string,
+    fileName: string | null,
+  ) {
+    const confirmed = window.confirm(
+      `${fileName ?? "선택한 파일"}을 삭제하시겠습니까?`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    const removed = await removeFile(fileId);
+    if (removed) {
+      alert("파일이 삭제되었습니다.");
+    }
   }
 
   async function handleSave() {
     if (!selectedRow) return;
 
-    setSaving(true);
-
+    const draft = draftsByRowId[selectedRow.id];
     const previousStatus = selectedRow.qc_status;
-    const nextStatus = selectedDecision || selectedStatus;
+    const nextStatus = draft?.decision || selectedDecision || selectedStatus;
+    const nextMemo = draft?.memo ?? memo;
+    const evidence = draft?.evidence ?? createEmptyEvidenceDraft();
+    const inspectionChanged =
+      nextStatus !== previousStatus || nextMemo !== selectedRow.memo;
+    const evidenceChanged =
+      evidence.inspectionReport !== null ||
+      evidence.measurementData !== null ||
+      evidence.images.length > 0;
 
-    const { error: updateError } = await supabase
-      .from("qc_requests")
-      .update({
-        qc_status: nextStatus,
-        memo,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", selectedRow.id);
-
-    if (updateError) {
-      alert(`검사 결과 저장 실패: ${updateError.message}`);
-      setSaving(false);
+    if (!inspectionChanged && !evidenceChanged) {
+      setDraftsByRowId((prev) => {
+        const next = { ...prev };
+        delete next[selectedRow.id];
+        return next;
+      });
+      setRowChanged(selectedRow.id, false);
       return;
     }
 
-    await supabase.from("workflow_status_histories").insert({
-      bom_item_id: selectedRow.bom_item_id,
-      workflow_type: "qc",
-      from_status: previousStatus,
-      to_status: nextStatus,
-      memo: memo || `검사관리 상태 변경: ${previousStatus} → ${nextStatus}`,
-      changed_at: new Date().toISOString(),
-    });
+    setSaving(true);
+    clearEvidenceError();
 
-    await supabase.from("activity_logs").insert({
-      project_id: selectedRow.project_id,
-      bom_item_id: selectedRow.bom_item_id,
-      target_type: "qc",
-      target_id: selectedRow.id,
-      action: "qc_status_change",
-      before_value: previousStatus,
-      after_value: nextStatus,
-      memo: memo || `검사관리 상태 변경: ${previousStatus} → ${nextStatus}`,
-      created_at: new Date().toISOString(),
-    });
+    try {
+      if (inspectionChanged) {
+        const { error: updateError } = await supabase
+          .from("qc_requests")
+          .update({
+            qc_status: nextStatus,
+            memo: nextMemo,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", selectedRow.id);
 
-    if (nextStatus === "passed") {
+        if (updateError) {
+          throw new Error(`검사 결과 저장 실패: ${updateError.message}`);
+        }
+
+        await supabase.from("workflow_status_histories").insert({
+          bom_item_id: selectedRow.bom_item_id,
+          workflow_type: "qc",
+          from_status: previousStatus,
+          to_status: nextStatus,
+          memo:
+            nextMemo ||
+            `검사관리 상태 변경: ${previousStatus} → ${nextStatus}`,
+          changed_at: new Date().toISOString(),
+        });
+
+        await supabase.from("activity_logs").insert({
+          project_id: selectedRow.project_id,
+          bom_item_id: selectedRow.bom_item_id,
+          target_type: "qc",
+          target_id: selectedRow.id,
+          action: "qc_status_change",
+          before_value: previousStatus,
+          after_value: nextStatus,
+          memo:
+            nextMemo ||
+            `검사관리 상태 변경: ${previousStatus} → ${nextStatus}`,
+          created_at: new Date().toISOString(),
+        });
+      }
+
+      if (inspectionChanged && nextStatus === "passed") {
       await supabase.from("activity_logs").insert({
         project_id: selectedRow.project_id,
         bom_item_id: selectedRow.bom_item_id,
@@ -334,60 +577,111 @@ export default function QualityInspectionPage() {
         memo: "QC 승인 완료. 출하관리 이관 대상",
         created_at: new Date().toISOString(),
       });
-    }
-
-    if (nextStatus === "failed") {
-      const { data: existingNcr } = await supabase
-        .from("ncr_reports")
-        .select("id")
-        .eq("qc_request_id", selectedRow.id)
-        .maybeSingle();
-
-      if (!existingNcr?.id) {
-        await supabase.from("ncr_reports").insert({
-          bom_item_id: selectedRow.bom_item_id,
-          qc_request_id: selectedRow.id,
-          title: `${selectedRow.part_number} NCR 발생`,
-          status: "registered",
-          description: memo || "검사관리에서 부적합 판정으로 NCR 자동 생성",
-          created_at: new Date().toISOString(),
-        });
-
-        await supabase.from("activity_logs").insert({
-          project_id: selectedRow.project_id,
-          bom_item_id: selectedRow.bom_item_id,
-          target_type: "ncr",
-          target_id: selectedRow.id,
-          action: "qc_failed_ncr_created",
-          before_value: previousStatus,
-          after_value: nextStatus,
-          memo: "QC 부적합 판정. NCR 자동 생성",
-          created_at: new Date().toISOString(),
-        });
       }
+
+      if (inspectionChanged && nextStatus === "failed") {
+        const { data: existingNcr } = await supabase
+          .from("ncr_reports")
+          .select("id")
+          .eq("qc_request_id", selectedRow.id)
+          .maybeSingle();
+
+        if (!existingNcr?.id) {
+          await supabase.from("ncr_reports").insert({
+            bom_item_id: selectedRow.bom_item_id,
+            qc_request_id: selectedRow.id,
+            title: `${selectedRow.part_number} NCR 발생`,
+            status: "registered",
+            description:
+              nextMemo || "검사관리에서 부적합 판정으로 NCR 자동 생성",
+            created_at: new Date().toISOString(),
+          });
+
+          await supabase.from("activity_logs").insert({
+            project_id: selectedRow.project_id,
+            bom_item_id: selectedRow.bom_item_id,
+            target_type: "ncr",
+            target_id: selectedRow.id,
+            action: "qc_failed_ncr_created",
+            before_value: previousStatus,
+            after_value: nextStatus,
+            memo: "QC 부적합 판정. NCR 자동 생성",
+            created_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      if (evidence.inspectionReport) {
+        const uploaded = await uploadFile(
+          "inspection_report",
+          evidence.inspectionReport,
+        );
+
+        if (!uploaded) {
+          throw new Error("검사성적서 저장에 실패했습니다.");
+        }
+      }
+
+      if (evidence.measurementData) {
+        const uploaded = await uploadFile(
+          "measurement_data",
+          evidence.measurementData,
+        );
+
+        if (!uploaded) {
+          throw new Error("측정데이터 저장에 실패했습니다.");
+        }
+      }
+
+      for (const imageFile of evidence.images) {
+        const uploaded = await uploadFile("image", imageFile);
+
+        if (!uploaded) {
+          throw new Error(`${imageFile.name} 저장에 실패했습니다.`);
+        }
+      }
+
+      if (inspectionChanged) {
+        setRows((prev) =>
+          prev.map((row) =>
+            row.id === selectedRow.id
+              ? {
+                  ...row,
+                  qc_status: nextStatus,
+                  memo: nextMemo,
+                  updated_at: new Date().toISOString(),
+                }
+              : row,
+          ),
+        );
+      }
+
+      setDraftsByRowId((prev) => {
+        const next = { ...prev };
+        delete next[selectedRow.id];
+        return next;
+      });
+      setRowChanged(selectedRow.id, false);
+      setSelectedDecision("");
+      setMemo(nextMemo);
+
+      alert(
+        inspectionChanged && evidenceChanged
+          ? "검사결과와 증빙자료가 저장되었습니다."
+          : inspectionChanged
+            ? "검사결과가 저장되었습니다."
+            : "검사 증빙자료가 저장되었습니다.",
+      );
+    } catch (error) {
+      console.error("검사결과 및 증빙자료 저장 실패:", error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "검사결과 저장에 실패했습니다.",
+      );
+    } finally {
+      setSaving(false);
     }
-
-    setRows((prev) =>
-      prev.map((row) =>
-        row.id === selectedRow.id
-          ? {
-              ...row,
-              qc_status: nextStatus,
-              memo,
-              updated_at: new Date().toISOString(),
-            }
-          : row
-      )
-    );
-
-    setChangedIds((prev) => {
-      const next = new Set(prev);
-      next.delete(selectedRow.id);
-      return next;
-    });
-
-    setSelectedDecision("");
-    setSaving(false);
   }
 
   if (loading) {
@@ -765,7 +1059,7 @@ export default function QualityInspectionPage() {
                                       <select
                                         value={selectedDecision}
                                         onChange={(event) =>
-                                          setSelectedDecision(event.target.value)
+                                          handleDecisionChange(event.target.value)
                                         }
                                         className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none"
                                       >
@@ -806,42 +1100,179 @@ export default function QualityInspectionPage() {
                                   </h3>
 
                                   <div className="space-y-3">
-                                    <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-3">
-                                      <div className="flex items-center gap-2">
+                                    <input
+                                      ref={inspectionReportInputRef}
+                                      type="file"
+                                      accept="application/pdf,.pdf"
+                                      onChange={(event) =>
+                                        void handleEvidenceFileChange(
+                                          "inspection_report",
+                                          event,
+                                        )
+                                      }
+                                      className="hidden"
+                                    />
+
+                                    <input
+                                      ref={measurementDataInputRef}
+                                      type="file"
+                                      accept="application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xls,.xlsx"
+                                      onChange={(event) =>
+                                        void handleEvidenceFileChange(
+                                          "measurement_data",
+                                          event,
+                                        )
+                                      }
+                                      className="hidden"
+                                    />
+
+                                    <input
+                                      ref={imageInputRef}
+                                      type="file"
+                                      accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp"
+                                      multiple
+                                      onChange={(event) =>
+                                        void handleImageFilesChange(event)
+                                      }
+                                      className="hidden"
+                                    />
+
+                                    {evidenceError ? (
+                                      <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold leading-5 text-red-700">
+                                        {evidenceError}
+                                      </div>
+                                    ) : null}
+
+                                    <div
+                                      className={[
+                                        "flex items-center justify-between rounded-xl border px-3 py-3 transition",
+                                        pendingEvidence.inspectionReport
+                                          ? "border-blue-300 bg-blue-50/60"
+                                          : inspectionReport
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : "border-slate-200 bg-white",
+                                      ].join(" ")}
+                                    >
+                                      <div className="flex min-w-0 items-center gap-2">
                                         <FileText size={16} className="text-red-500" />
-                                        <div>
-                                          <div className="text-xs font-black text-slate-800">
-                                            검사성적서_{row.part_number}.pdf
+                                        <div className="min-w-0">
+                                          <div className="truncate text-xs font-black text-slate-800">
+                                            {pendingEvidence.inspectionReport
+                                              ?.name ??
+                                              inspectionReport?.file_name ??
+                                              `검사성적서_${row.part_number}.pdf`}
                                           </div>
                                           <div className="text-[11px] font-semibold text-slate-400">
-                                            파트너 제출 문서
+                                            {pendingEvidence.inspectionReport
+                                              ? "검사결과 저장 대기"
+                                              : evidenceLoading
+                                              ? "파일 확인 중..."
+                                              : inspectionReport
+                                                ? "업로드 완료"
+                                                : "PDF 파일을 업로드해 주세요."}
                                           </div>
                                         </div>
                                       </div>
-                                      <button className="flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-black text-blue-600">
-                                        <Upload size={13} />
-                                        업로드
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openEvidenceFilePicker(
+                                            "inspection_report",
+                                            inspectionReportInputRef.current,
+                                          )
+                                        }
+                                        disabled={saving || uploadingType !== null}
+                                        className={[
+                                          "ml-3 flex h-8 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-black transition-all duration-100 focus:outline-none focus:ring-4 focus:ring-blue-200 active:translate-y-[3px] active:scale-[0.98] active:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:active:scale-100",
+                                          uploadingType === "inspection_report" ||
+                                          pressedFileType === "inspection_report"
+                                            ? "bg-blue-700 text-white shadow-none translate-y-[3px]"
+                                            : "border border-blue-700 bg-blue-600 text-white shadow-[0_3px_0_#1d4ed8] hover:bg-blue-700",
+                                          uploadingType !== null &&
+                                          uploadingType !== "inspection_report"
+                                            ? "opacity-40"
+                                            : "",
+                                        ].join(" ")}
+                                      >
+                                        {uploadingType === "inspection_report" ? (
+                                          <Loader2 size={13} className="animate-spin" />
+                                        ) : (
+                                          <Upload size={13} />
+                                        )}
+                                        {uploadingType === "inspection_report"
+                                          ? "업로드 중..."
+                                          : pendingEvidence.inspectionReport ||
+                                              inspectionReport
+                                            ? "재업로드"
+                                            : "업로드"}
                                       </button>
                                     </div>
 
-                                    <div className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-3">
-                                      <div className="flex items-center gap-2">
+                                    <div
+                                      className={[
+                                        "flex items-center justify-between rounded-xl border px-3 py-3 transition",
+                                        pendingEvidence.measurementData
+                                          ? "border-blue-300 bg-blue-50/60"
+                                          : measurementData
+                                            ? "border-emerald-200 bg-emerald-50/40"
+                                            : "border-slate-200 bg-white",
+                                      ].join(" ")}
+                                    >
+                                      <div className="flex min-w-0 items-center gap-2">
                                         <FileSpreadsheet
                                           size={16}
                                           className="text-emerald-600"
                                         />
-                                        <div>
-                                          <div className="text-xs font-black text-slate-800">
-                                            측정데이터_{row.part_number}.xlsx
+                                        <div className="min-w-0">
+                                          <div className="truncate text-xs font-black text-slate-800">
+                                            {pendingEvidence.measurementData
+                                              ?.name ??
+                                              measurementData?.file_name ??
+                                              `측정데이터_${row.part_number}.xlsx`}
                                           </div>
                                           <div className="text-[11px] font-semibold text-slate-400">
-                                            측정값 / 원본 데이터
+                                            {pendingEvidence.measurementData
+                                              ? "검사결과 저장 대기"
+                                              : evidenceLoading
+                                              ? "파일 확인 중..."
+                                              : measurementData
+                                                ? "업로드 완료"
+                                                : "XLS 또는 XLSX 파일을 업로드해 주세요."}
                                           </div>
                                         </div>
                                       </div>
-                                      <button className="flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-black text-blue-600">
-                                        <Upload size={13} />
-                                        업로드
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          openEvidenceFilePicker(
+                                            "measurement_data",
+                                            measurementDataInputRef.current,
+                                          )
+                                        }
+                                        disabled={saving || uploadingType !== null}
+                                        className={[
+                                          "ml-3 flex h-8 shrink-0 items-center gap-1 rounded-lg px-3 text-xs font-black transition-all duration-100 focus:outline-none focus:ring-4 focus:ring-blue-200 active:translate-y-[3px] active:scale-[0.98] active:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:active:scale-100",
+                                          uploadingType === "measurement_data" ||
+                                          pressedFileType === "measurement_data"
+                                            ? "bg-blue-700 text-white shadow-none translate-y-[3px]"
+                                            : "border border-blue-700 bg-blue-600 text-white shadow-[0_3px_0_#1d4ed8] hover:bg-blue-700",
+                                          uploadingType !== null &&
+                                          uploadingType !== "measurement_data"
+                                            ? "opacity-40"
+                                            : "",
+                                        ].join(" ")}
+                                      >
+                                        {uploadingType === "measurement_data" ? (
+                                          <Loader2 size={13} className="animate-spin" />
+                                        ) : (
+                                          <Upload size={13} />
+                                        )}
+                                        {uploadingType === "measurement_data"
+                                          ? "업로드 중..."
+                                          : pendingEvidence.measurementData ||
+                                              measurementData
+                                            ? "재업로드"
+                                            : "업로드"}
                                       </button>
                                     </div>
 
@@ -850,22 +1281,112 @@ export default function QualityInspectionPage() {
                                         <div className="text-xs font-black text-slate-700">
                                           사진
                                         </div>
-                                        <button className="flex items-center gap-1 rounded-lg border border-blue-200 px-3 py-1.5 text-xs font-black text-blue-600">
-                                          <Upload size={13} />
-                                          사진 업로드
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            openEvidenceFilePicker(
+                                              "image",
+                                              imageInputRef.current,
+                                            )
+                                          }
+                                          disabled={saving || uploadingType !== null}
+                                          className={[
+                                            "flex h-8 items-center gap-1 rounded-lg border border-blue-700 bg-blue-600 px-3 text-xs font-black text-white shadow-[0_3px_0_#1d4ed8] transition-all duration-100 hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-200 active:translate-y-[3px] active:scale-[0.98] active:shadow-none disabled:cursor-not-allowed disabled:translate-y-0 disabled:opacity-40 disabled:active:scale-100",
+                                            pressedFileType === "image"
+                                              ? "translate-y-[3px] bg-blue-700 shadow-none"
+                                              : "",
+                                          ].join(" ")}
+                                        >
+                                          {uploadingType === "image" ? (
+                                            <Loader2 size={13} className="animate-spin" />
+                                          ) : (
+                                            <Upload size={13} />
+                                          )}
+                                          {uploadingType === "image"
+                                            ? "업로드 중..."
+                                            : "사진 업로드"}
                                         </button>
                                       </div>
 
-                                      <div className="grid grid-cols-4 gap-2">
-                                        {[1, 2, 3, 4].map((item) => (
-                                          <div
-                                            key={item}
-                                            className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400"
-                                          >
-                                            <ImageIcon size={18} />
-                                          </div>
-                                        ))}
-                                      </div>
+                                      {images.length > 0 ||
+                                      pendingEvidence.images.length > 0 ? (
+                                        <div className="grid grid-cols-4 gap-2">
+                                          {images.map((image) => (
+                                            <div
+                                              key={image.id}
+                                              className="group relative h-16 overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
+                                            >
+                                              {previewUrls[image.id] ? (
+                                                <img
+                                                  src={previewUrls[image.id]}
+                                                  alt={image.file_name ?? "검사사진"}
+                                                  className="h-full w-full object-cover"
+                                                />
+                                              ) : (
+                                                <div className="flex h-full items-center justify-center text-slate-400">
+                                                  <ImageIcon size={18} />
+                                                </div>
+                                              )}
+
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  void handleRemoveEvidenceFile(
+                                                    image.id,
+                                                    image.file_name,
+                                                  )
+                                                }
+                                                disabled={deletingId === image.id}
+                                                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/70 text-white opacity-0 transition group-hover:opacity-100 disabled:cursor-not-allowed"
+                                                aria-label="검사사진 삭제"
+                                              >
+                                                <X size={13} />
+                                              </button>
+                                            </div>
+                                          ))}
+
+                                          {pendingEvidence.images.map(
+                                            (imageFile, imageIndex) => (
+                                              <div
+                                                key={`${imageFile.name}-${imageFile.lastModified}-${imageIndex}`}
+                                                className="group relative flex h-16 min-w-0 flex-col items-center justify-center overflow-hidden rounded-lg border border-blue-300 bg-blue-50 px-2 text-blue-500"
+                                              >
+                                                <ImageIcon size={17} />
+                                                <div className="mt-1 w-full truncate text-center text-[10px] font-bold">
+                                                  {imageFile.name}
+                                                </div>
+                                                <div className="text-[9px] font-black text-blue-600">
+                                                  저장 대기
+                                                </div>
+
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    handleRemovePendingImage(
+                                                      imageIndex,
+                                                    )
+                                                  }
+                                                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-slate-950/70 text-white opacity-0 transition group-hover:opacity-100"
+                                                  aria-label="저장 대기 검사사진 제거"
+                                                >
+                                                  <X size={13} />
+                                                </button>
+                                              </div>
+                                            ),
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <div className="grid grid-cols-4 gap-2">
+                                          {[1, 2, 3, 4].map((item) => (
+                                            <div
+                                              key={item}
+                                              className="flex h-16 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-300"
+                                            >
+                                              <ImageIcon size={18} />
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -893,158 +1414,27 @@ export default function QualityInspectionPage() {
           </section>
         </div>
 
-        {selectedRow && (
-        <aside className="hidden">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4">
-            <div>
-              <h2 className="text-lg font-black text-slate-950">
-                {selectedRow
-                  ? `${selectedRow.part_number} / ${selectedRow.part_name}`
-                  : "검사 상세"}
-              </h2>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setSelectedRowId(null)}
-              className="text-slate-400 transition hover:text-slate-700"
-              aria-label="검사 상세 닫기"
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          <div className="g1-scroll-hide h-[calc(100%-64px)] space-y-5 overflow-y-auto p-4">
-            <>
-                <section>
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-700">
-                      도면 PDF 미리보기
-                    </h3>
-                    <button className="flex items-center gap-1 text-xs font-black text-blue-600">
-                      <Download size={13} />
-                      다운로드
-                    </button>
-                  </div>
-
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <div className="flex h-40 items-center justify-center rounded-lg bg-slate-100 text-slate-400">
-                      <div className="text-center">
-                        <Eye size={28} className="mx-auto" />
-                        <div className="mt-2 text-[11px] font-black">
-                          PDF VIEWER
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 text-xs font-black text-slate-800">
-                      {selectedRow.drawing_no}_Rev.{selectedRow.revision}.pdf
-                    </div>
-                    <div className="mt-1 text-[11px] font-semibold text-slate-400">
-                      고객 배포 도면 / 다운로드 문서
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-3 text-xs font-black text-slate-700">
-                    검사성적서 미리보기
-                  </h3>
-
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <div className="flex h-40 items-center justify-center rounded-lg bg-red-50 text-red-500">
-                      <div className="text-center">
-                        <FileText size={28} className="mx-auto" />
-                        <div className="mt-2 text-[11px] font-black">
-                          REPORT PREVIEW
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mt-3 text-xs font-black text-slate-800">
-                      검사성적서_{selectedRow.part_number}.pdf
-                    </div>
-                    <div className="mt-1 text-[11px] font-semibold text-slate-400">
-                      업로드된 검사성적서 미리보기
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <h3 className="mb-3 text-xs font-black text-slate-700">
-                    측정데이터 미리보기
-                  </h3>
-
-                  <div className="rounded-xl border border-slate-200 p-3">
-                    <div className="mb-3 flex items-center gap-2">
-                      <FileSpreadsheet size={16} className="text-emerald-600" />
-                      <div>
-                        <div className="text-xs font-black text-slate-800">
-                          측정데이터_{selectedRow.part_number}.xlsx
-                        </div>
-                        <div className="text-[11px] font-semibold text-slate-400">
-                          주요 측정값 Preview
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="overflow-hidden rounded-lg border border-slate-200">
-                      <table className="w-full text-left text-[11px]">
-                        <thead className="bg-slate-50 font-black text-slate-500">
-                          <tr>
-                            <th className="px-2 py-2">항목</th>
-                            <th className="px-2 py-2">기준</th>
-                            <th className="px-2 py-2">측정</th>
-                            <th className="px-2 py-2">판정</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
-                          {[
-                            ["A", "20.00", "20.01", "OK"],
-                            ["B", "15.00", "14.99", "OK"],
-                            ["C", "8.00", "8.03", "OK"],
-                          ].map((item) => (
-                            <tr key={item[0]}>
-                              <td className="px-2 py-2">{item[0]}</td>
-                              <td className="px-2 py-2">{item[1]}</td>
-                              <td className="px-2 py-2">{item[2]}</td>
-                              <td className="px-2 py-2 text-emerald-600">
-                                {item[3]}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </section>
-
-                <section>
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="text-xs font-black text-slate-700">
-                      검사 사진 미리보기
-                    </h3>
-                    <button className="text-xs font-black text-blue-600">
-                      전체 보기
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-4 gap-2">
-                    {[1, 2, 3, 4].map((item) => (
-                      <div
-                        key={item}
-                        className="flex h-14 items-center justify-center rounded-lg border border-slate-200 bg-slate-100 text-slate-400"
-                      >
-                        <ImageIcon size={17} />
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              </>
-          </div>
-        </aside>
-        )}
       </div>
     </WorkspaceLayout>
   );
+}
+
+type PendingEvidenceDraft = {
+  inspectionReport: File | null;
+  measurementData: File | null;
+  images: File[];
+};
+
+type InspectionDraft = {
+  decision: string;
+  memo: string;
+  evidence: PendingEvidenceDraft;
+};
+
+function createEmptyEvidenceDraft(): PendingEvidenceDraft {
+  return {
+    inspectionReport: null,
+    measurementData: null,
+    images: [],
+  };
 }
